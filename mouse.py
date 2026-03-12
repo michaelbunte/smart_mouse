@@ -345,8 +345,21 @@ def generate_random_map(width, height, object_count, obstacle_container, seed):
 class ObstacleContainer:
     def __init__(self):
         self.__space = pymunk.Space()
+        self.__space.gravity = (0, 0)
+        self.__space.damping = 0.001
+
+
         self.__shape_to_polygon = {}
         self.__polygon_to_shape = {}
+
+        self.__dynamic_shapes = set()
+        self.__dynamic_bodies = set()
+
+    def get_space(self):
+        return self.__space
+
+    def step(self, dt: float):
+        self.__space.step(dt)
 
     def add_obstacle(self, polygon):
         pos = polygon.get_global_position()
@@ -368,12 +381,38 @@ class ObstacleContainer:
 
         body = self.__space.static_body
         shape = pymunk.Poly(body, verts)
+        shape.elasticity = 0.9
+        shape.friction = 0.8
 
         self.__space.add(shape)
         self.__shape_to_polygon[shape] = polygon
         self.__polygon_to_shape[polygon] = shape
 
         return shape
+
+    def add_ball(self, position: Point, radius=12, mass=1.0, elasticity=0.9, friction=0.7):
+        moment = pymunk.moment_for_circle(mass, 0, radius)
+
+        body = pymunk.Body(mass, moment)
+        body.position = (position.x, position.y)
+
+        shape = pymunk.Circle(body, radius)
+        shape.elasticity = elasticity
+        shape.friction = friction
+
+        self.__space.add(body, shape)
+        self.__dynamic_bodies.add(body)
+        self.__dynamic_shapes.add(shape)
+
+        return body, shape
+
+    def remove_ball(self, body, shape):
+        if shape in self.__dynamic_shapes:
+            self.__dynamic_shapes.remove(shape)
+        if body in self.__dynamic_bodies:
+            self.__dynamic_bodies.remove(body)
+
+        self.__space.remove(body, shape)
 
     def is_point_in_obstacle(self, point: Point):
         hits = self.__space.point_query(
@@ -840,6 +879,77 @@ def get_angle_rrt(node: RRTNode):
 
     return get_direction(root.position, first_generation.position)
 
+class Ball:
+    def __init__(self, obstacle_container, global_pos=Point(100, 100), radius=12):
+        self.__radius = radius
+        self.__color = (80, 170, 255)
+
+        self.__force = 1500.0
+
+        self.__body, self.__shape = obstacle_container.add_ball(
+            position=global_pos,
+            radius=radius,
+            mass=1.0,
+            elasticity=0.1,
+            friction=0.7
+        )
+
+        # drag / friction
+        self.__body.damping = 0.2
+
+    def get_position(self):
+        pos = self.__body.position
+        return Point(pos.x, pos.y)
+
+    def set_position(self, p: Point):
+        self.__body.position = (p.x, p.y)
+
+    def get_radius(self):
+        return self.__radius
+
+    def draw(self, game):
+        pos = self.get_position()
+        camera = game.get_camera_position()
+
+        screen_x = pos.x - camera.x
+        screen_y = pos.y - camera.y
+
+        pygame.draw.circle(
+            game.get_screen(),
+            self.__color,
+            (int(screen_x), int(screen_y)),
+            int(self.__radius)
+        )
+
+    def tick(self, game):
+        keys = pygame.key.get_pressed()
+
+        move_x = 0
+        move_y = 0
+
+        if keys[pygame.K_LEFT]:
+            move_x -= 1
+        if keys[pygame.K_RIGHT]:
+            move_x += 1
+        if keys[pygame.K_UP]:
+            move_y -= 1
+        if keys[pygame.K_DOWN]:
+            move_y += 1
+
+        if move_x == 0 and move_y == 0:
+            return
+
+        length = math.hypot(move_x, move_y)
+        move_x /= length
+        move_y /= length
+
+        force = (
+            move_x * self.__force,
+            move_y * self.__force
+        )
+
+        self.__body.apply_force_at_world_point(force, self.__body.position)
+
 class Mouse:
     def __init__(self, global_pos=Point(50, 0)):
         self.__global_pos = global_pos.copy()
@@ -1018,6 +1128,12 @@ class Game:
         self.__cat = Cat()
         self.__mouse = Mouse()
         self.__preferences = Preferences()
+
+        self.__ball = Ball(
+            obstacle_container=self.__obstacle_container,
+            global_pos=Point(200, 0),
+            radius=12
+        )
         
         pygame.init()
         self.__current_screen_size = Point(1000, 800)
@@ -1041,6 +1157,9 @@ class Game:
     
     def get_mouse(self):
         return self.__mouse
+    
+    def get_ball(self):
+        return self.__ball
 
     def get_preferences(self):
         return self.__preferences
@@ -1068,12 +1187,16 @@ class Game:
             self.__obstacle_container.draw_obstacles(self)
             self.__cat.draw(self)
             self.__mouse.draw(self)
+            self.__ball.draw(self)
             pygame.display.flip()
             self.__clock.tick(120)
 
     def __tick(self):
         self.__cat.tick(self)
         self.__mouse.tick(self)
+        self.__ball.tick(self)
+
+        self.__obstacle_container.step(UPDATE_MS / 1000.0)
 
 
     def get_camera_position(self):
