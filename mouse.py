@@ -766,6 +766,39 @@ class BestRRT:
         self.strafe_clockwise = self.__pick_strafe_node(clockwise=True)
         self.strafe_counterclockwise = self.__pick_strafe_node(clockwise=False)
 
+    def draw(self, game):
+            screen = game.get_screen()
+            camera = game.get_camera_position()
+
+            size = 12
+            half = size // 2
+
+            def draw_node(node, color):
+                if node is None:
+                    return
+
+                x = node.position.x - camera.x - half
+                y = node.position.y - camera.y - half
+
+                pygame.draw.rect(
+                    screen,
+                    color,
+                    (x, y, size, size)
+                )
+
+            draw_node(self.scram, (255, 0, 255))
+            draw_node(self.close, (255, 255, 255))
+
+            draw_node(self.out_of_sight, (0, 255, 255))
+            draw_node(self.out_of_sight_far, (0, 150, 255))
+
+            draw_node(self.closest_to_taunt_distance_far, (255, 200, 0))
+            draw_node(self.closest_to_taunt_distance_medium, (255, 140, 0))
+            draw_node(self.closest_to_taunt_distance_close, (255, 80, 0))
+
+            draw_node(self.strafe_clockwise, (0, 255, 0))
+            draw_node(self.strafe_counterclockwise, (0, 180, 0))
+
     def __wrap_angle(self, angle):
         while angle > math.pi:
             angle -= 2.0 * math.pi
@@ -906,6 +939,7 @@ class Mouse:
     def __init__(self, game, global_pos=Point(50, 0)):
         self.__rot = 0.0
         self.__rrt = []
+        self.__best_rrt = BestRRT([], game)
         self.__FORCE = 4000
         self.__MAX_ROT_DELTA = 0.12
 
@@ -958,15 +992,16 @@ class Mouse:
 
         draw_rrt(self.__rrt, game)
         body.draw(game.get_screen(), game.get_camera_position())
+        self.__best_rrt.draw(game)
 
     def tick(self, game):
         current_pos = self.get_position()
 
         self.__rrt = create_rrt(game, current_pos)
-        best_rrt = BestRRT(self.__rrt, game)
+        self.__best_rrt = BestRRT(self.__rrt, game)
 
-        if best_rrt.out_of_sight_far is not None:
-            angle = get_angle_rrt(best_rrt.out_of_sight_far)
+        if self.__best_rrt.out_of_sight_far is not None:
+            angle = get_angle_rrt(self.__best_rrt.out_of_sight_far)
             if angle is not None:
                 force = Point.from_angle(angle, self.__FORCE)
                 self.__body.apply_force_at_world_point(
