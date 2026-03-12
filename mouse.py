@@ -434,6 +434,27 @@ def draw_ray_fan(screen, camera_position, obstacle_container, origin: Point, cen
         line.set_width(width)
         line.draw(screen, camera_position)
 
+class Mouse:
+    def __init__(self, global_pos=Point(50, 0)):
+        self.__global_pos = global_pos.copy()
+        self.__rot = 0
+
+    def draw(self, game):
+        body = Polygon(
+            global_position=self.__global_pos,
+            rot=self.__rot,
+            size=5,
+            points=[
+                Point(0, -1),
+                Point(0, 1),
+                Point(2, 0)
+            ],
+            color=(255, 0, 255)
+        )
+        body.draw(game.get_screen(), game.get_camera_position())
+    def tick(self, game):
+        pass
+
 class Cat:
     def __init__(self, global_pos=Point(0, 0)):
         self.__head_rot = 0.0
@@ -478,7 +499,6 @@ class Cat:
             color=(255, 146, 56)
         )
 
-
         draw_ray_fan(
             screen=game.get_screen(),
             camera_position=game.get_camera_position(),
@@ -491,7 +511,7 @@ class Cat:
             color=(70, 70, 70),
             width=2
         )
-        
+
         body.draw(game.get_screen(), game.get_camera_position())
         head.draw(game.get_screen(), game.get_camera_position())
 
@@ -562,6 +582,7 @@ class Game:
         self.__clock = pygame.time.Clock()
         self.__last_update = pygame.time.get_ticks()
         self.__cat = Cat()
+        self.__mouse = Mouse()
         
         pygame.init()
         self.__current_screen_size = Point(1000, 800)
@@ -601,8 +622,7 @@ class Game:
             self.__screen.fill((30, 30, 30))
             self.__obstacle_container.draw_obstacles(self)
             self.__cat.draw(self)
-            line = Line(Point(0, 0), Point(100, 50))
-            line.draw(self.__screen, self.get_camera_position())
+            self.__mouse.draw(self)
             pygame.display.flip()
             self.__clock.tick(120)
 
@@ -617,9 +637,7 @@ class Game:
 
 
     def get_camera_position(self):
-        # return self.__camera_position.copy()
-            return self.__cat.get_position() - (self.__current_screen_size / 2)
-        # return self.__cat.get_position()
+        return self.__cat.get_position() - (self.__current_screen_size / 2)
     
     def get_screen_size(self):
         return self.__current_screen_size.copy()
