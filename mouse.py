@@ -592,6 +592,20 @@ def draw_ray_fan(
         # second segment
         Segment(mid, end, color=color_b, width=width).draw(screen, camera_position)
 
+_node_surface_cache = {}
+def get_node_surface(size, color, alpha):
+    key = (size, color, alpha)
+
+    if key in _node_surface_cache:
+        return _node_surface_cache[key]
+
+    surface = pygame.Surface((size, size), pygame.SRCALPHA)
+    surface.fill((0, 0, 0, 0))
+    pygame.draw.rect(surface, (*color, alpha), (0, 0, size, size))
+
+    _node_surface_cache[key] = surface
+    return surface
+
 class RRTNode:
     def __init__(self, parent, position: Point, game):
         cat_pos = game.get_cat().get_head_position()
@@ -617,26 +631,24 @@ class RRTNode:
             max_range = game.get_preferences().motion_viewable_range
             t = min(distance / max_range, 1.0)
 
-            # bright green when close, darker green when far
-            green = int(255 - (200 * t))   # 255 -> 100
+            green = int(255 - (200 * t))
             color = (0, green, 0)
+            alpha = 60
         else:
             color = (255, 0, 0)
+            alpha = 60
 
-        square = Polygon(
-            global_position=self.position,
-            rot=0.0,
-            size=4,
-            points=[
-                Point(-1, -1),
-                Point(1, -1),
-                Point(1, 1),
-                Point(-1, 1)
-            ],
-            color=color
-        )
+        screen = game.get_screen()
+        camera = game.get_camera_position()
 
-        square.draw(game.get_screen(), game.get_camera_position())
+        size = 8
+        half = size // 2
+
+        screen_x = self.position.x - camera.x - half
+        screen_y = self.position.y - camera.y - half
+
+        surf = get_node_surface(size, color, alpha)
+        screen.blit(surf, (screen_x, screen_y))
 
 def create_rrt(game, start_pos=Point(166, 0), step_size=50, search_size=1050, rays_per_step=10):
     total_segments = []
