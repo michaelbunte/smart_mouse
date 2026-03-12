@@ -1143,6 +1143,7 @@ class Mouse:
         force = Point(0, 0)
         target = "none selected"
 
+
         if self.__best_rrt.scram and distance_to_cat < game.get_preferences().scram_distance_always:
             target = "scram"
             angle = get_angle_rrt(self.__best_rrt.scram)
@@ -1170,7 +1171,7 @@ class Mouse:
                     (force.x, force.y),
                     self.__body.position
                 )
-        elif self.__best_rrt.closest_to_taunt_distance_far and cat_interest < CatInterestEstimator.IS_UNINTERESTED_MIN:
+        elif self.__best_rrt.closest_to_taunt_distance_far and cat_interest < CatInterestEstimator.IS_UNINTERESTED_MAX:
             target = "taunt distance far"
             angle = get_angle_rrt(self.__best_rrt.closest_to_taunt_distance_far)
             if angle is not None:
@@ -1408,8 +1409,8 @@ class Preferences:
         self.motion_viewable_range = 600
         self.taunt_distance_close = 100
         self.taunt_distance_medium = 200
-        self.taunt_distance_far = 300
-        self.out_of_sight_distance_far = 300
+        self.taunt_distance_far = 250
+        self.out_of_sight_distance_far = 400
         self.scram_distance_always = 60
         self.max_distance_from_cat = 400
         
