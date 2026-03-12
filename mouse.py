@@ -468,7 +468,6 @@ class ObstacleContainer:
             obstacle.draw(screen, camera_position)
 
     def raycast_first(self, start: Point, end: Point):
-        # First: detect if start is already inside a shape
         point_hits = self.__space.point_query(
             (start.x, start.y),
             0.0,
@@ -476,10 +475,12 @@ class ObstacleContainer:
         )
 
         for hit in point_hits:
-            # In Pymunk/Chipmunk, point-query distance is negative when inside
+            shape = hit.shape
+            if shape not in self.__shape_to_polygon:
+                continue
+
             if hit.distance <= 0:
-                shape = hit.shape
-                poly = self.__shape_to_polygon.get(shape)
+                poly = self.__shape_to_polygon[shape]
                 return {
                     "polygon": poly,
                     "point": start.copy(),
@@ -488,30 +489,31 @@ class ObstacleContainer:
                     "distance": 0.0
                 }
 
-        # Otherwise do the normal raycast
-        hit = self.__space.segment_query_first(
+        hits = self.__space.segment_query(
             (start.x, start.y),
             (end.x, end.y),
             0.0,
             pymunk.ShapeFilter()
         )
 
-        if hit is None:
-            return None
+        for hit in hits:
+            shape = hit.shape
+            if shape not in self.__shape_to_polygon:
+                continue
 
-        shape = hit.shape
-        poly = self.__shape_to_polygon.get(shape)
+            poly = self.__shape_to_polygon[shape]
+            return {
+                "polygon": poly,
+                "point": Point(hit.point.x, hit.point.y),
+                "normal": Point(hit.normal.x, hit.normal.y),
+                "alpha": hit.alpha,
+                "distance": math.hypot(
+                    hit.point.x - start.x,
+                    hit.point.y - start.y
+                )
+            }
 
-        return {
-            "polygon": poly,
-            "point": Point(hit.point.x, hit.point.y),
-            "normal": Point(hit.normal.x, hit.normal.y),
-            "alpha": hit.alpha,
-            "distance": math.hypot(
-                hit.point.x - start.x,
-                hit.point.y - start.y
-            )
-        }
+        return None
 
 def generate_line_from_point(point: Point, rot: float, obstacle_container, max_distance=1000):
     start = point.copy()
@@ -879,22 +881,20 @@ def get_angle_rrt(node: RRTNode):
 
     return get_direction(root.position, first_generation.position)
 
-class Ball:
-    def __init__(self, obstacle_container, global_pos=Point(100, 100), radius=12):
-        self.__radius = radius
-        self.__color = (80, 170, 255)
+class Mouse:
+    def __init__(self, game, global_pos=Point(50, 0)):
+        self.__rot = 0.0
+        self.__rrt = []
+        self.__FORCE = 4000
 
-        self.__force = 1500.0
-
-        self.__body, self.__shape = obstacle_container.add_ball(
+        self.__body, self.__shape = game.get_obstacle_container().add_ball(
             position=global_pos,
-            radius=radius,
+            radius=0.0001,
             mass=1.0,
-            elasticity=0.1,
-            friction=0.7
+            elasticity=1.0,
+            friction=0.9
         )
 
-        # drag / friction
         self.__body.damping = 0.2
 
     def get_position(self):
@@ -904,65 +904,9 @@ class Ball:
     def set_position(self, p: Point):
         self.__body.position = (p.x, p.y)
 
-    def get_radius(self):
-        return self.__radius
-
-    def draw(self, game):
-        pos = self.get_position()
-        camera = game.get_camera_position()
-
-        screen_x = pos.x - camera.x
-        screen_y = pos.y - camera.y
-
-        pygame.draw.circle(
-            game.get_screen(),
-            self.__color,
-            (int(screen_x), int(screen_y)),
-            int(self.__radius)
-        )
-
-    def tick(self, game):
-        keys = pygame.key.get_pressed()
-
-        move_x = 0
-        move_y = 0
-
-        if keys[pygame.K_LEFT]:
-            move_x -= 1
-        if keys[pygame.K_RIGHT]:
-            move_x += 1
-        if keys[pygame.K_UP]:
-            move_y -= 1
-        if keys[pygame.K_DOWN]:
-            move_y += 1
-
-        if move_x == 0 and move_y == 0:
-            return
-
-        length = math.hypot(move_x, move_y)
-        move_x /= length
-        move_y /= length
-
-        force = (
-            move_x * self.__force,
-            move_y * self.__force
-        )
-
-        self.__body.apply_force_at_world_point(force, self.__body.position)
-
-class Mouse:
-    def __init__(self, global_pos=Point(50, 0)):
-        self.__global_pos = global_pos.copy()
-        self.__rot = 0
-        self.__SPEED = 4
-        self.__rrt = []
-
-    def get_position(self):
-        return self.__global_pos.copy()
-
     def draw(self, game):
         body = Polygon(
-            global_position=self.__global_pos,
+            global_position=self.get_position(),
             rot=self.__rot,
             size=5,
             points=[
@@ -972,19 +916,26 @@ class Mouse:
             ],
             color=(255, 255, 255)
         )
+
         draw_rrt(self.__rrt, game)
         body.draw(game.get_screen(), game.get_camera_position())
-        
 
     def tick(self, game):
-        self.__rrt = create_rrt(game, self.__global_pos)
+        current_pos = self.get_position()
+
+        self.__rrt = create_rrt(game, current_pos)
         best_rrt = BestRRT(self.__rrt, game)
-        
-        if(best_rrt.out_of_sight_far is not None):
+
+        if best_rrt.out_of_sight_far is not None:
             angle = get_angle_rrt(best_rrt.out_of_sight_far)
-            if (angle is not None):
-                move = Point.from_angle(angle, 1)
-                self.__global_pos += move * self.__SPEED 
+            if angle is not None:
+                self.__rot = angle
+
+                force = Point.from_angle(angle, self.__FORCE)
+                self.__body.apply_force_at_world_point(
+                    (force.x, force.y),
+                    self.__body.position
+                )
 
 
 class Cat:
@@ -1126,14 +1077,8 @@ class Game:
         self.__clock = pygame.time.Clock()
         self.__last_update = pygame.time.get_ticks()
         self.__cat = Cat()
-        self.__mouse = Mouse()
+        self.__mouse = Mouse(self)
         self.__preferences = Preferences()
-
-        self.__ball = Ball(
-            obstacle_container=self.__obstacle_container,
-            global_pos=Point(200, 0),
-            radius=12
-        )
         
         pygame.init()
         self.__current_screen_size = Point(1000, 800)
@@ -1158,9 +1103,6 @@ class Game:
     def get_mouse(self):
         return self.__mouse
     
-    def get_ball(self):
-        return self.__ball
-
     def get_preferences(self):
         return self.__preferences
 
@@ -1187,14 +1129,12 @@ class Game:
             self.__obstacle_container.draw_obstacles(self)
             self.__cat.draw(self)
             self.__mouse.draw(self)
-            self.__ball.draw(self)
             pygame.display.flip()
             self.__clock.tick(120)
 
     def __tick(self):
         self.__cat.tick(self)
         self.__mouse.tick(self)
-        self.__ball.tick(self)
 
         self.__obstacle_container.step(UPDATE_MS / 1000.0)
 
