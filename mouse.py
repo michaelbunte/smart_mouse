@@ -128,8 +128,7 @@ class Polygon:
         self.__color = color
 
     def add_to_obstacle_container(self, obstacle_container):
-        bbox = self.compute_aabb()
-        obstacle_container.add_obstacle(self, bbox)
+        obstacle_container.add_obstacle(self)
 
     def draw(self, surface, camera_position, width=0):
         transformed = []
@@ -176,7 +175,7 @@ class Polygon:
 
         return (min_x, min_y, max_x, max_y)
     
-class Line:
+class Segment:
     def __init__(self, start: Point, end: Point, color=(255, 255, 255), width: int = 1):
         self.__start = start.copy()
         self.__end = end.copy()
@@ -281,7 +280,7 @@ class ObstacleContainer:
         self.__shape_to_polygon = {}
         self.__polygon_to_shape = {}
 
-    def add_obstacle(self, polygon, bbox=None):
+    def add_obstacle(self, polygon):
         pos = polygon.get_global_position()
         rot = polygon.get_rotation()
         size = polygon.get_size()
@@ -408,7 +407,7 @@ def generate_line_from_point(point: Point, rot: float, obstacle_container, max_d
     else:
         end = hit["point"]
 
-    return Line(start, end, color=(255, 255, 0), width=2)
+    return Segment(start, end, color=(255, 255, 0), width=2)
 
 def generate_line_from_point(point: Point, rot: float, obstacle_container, max_distance=1000):
     start = point.copy()
@@ -463,7 +462,7 @@ def draw_ray_fan(
         dist = math.hypot(dx, dy)
 
         if dist <= switch_distance:
-            Line(start, end, color=color_a, width=width).draw(screen, camera_position)
+            Segment(start, end, color=color_a, width=width).draw(screen, camera_position)
             continue
 
         # split point
@@ -474,15 +473,16 @@ def draw_ray_fan(
         )
 
         # first segment
-        Line(start, mid, color=color_a, width=width).draw(screen, camera_position)
+        Segment(start, mid, color=color_a, width=width).draw(screen, camera_position)
 
         # second segment
-        Line(mid, end, color=color_b, width=width).draw(screen, camera_position)
+        Segment(mid, end, color=color_b, width=width).draw(screen, camera_position)
 
 class Mouse:
     def __init__(self, global_pos=Point(50, 0)):
         self.__global_pos = global_pos.copy()
         self.__rot = 0
+        self.__SPEED = 4
 
     def draw(self, game):
         body = Polygon(
@@ -498,7 +498,23 @@ class Mouse:
         )
         body.draw(game.get_screen(), game.get_camera_position())
     def tick(self, game):
-        pass
+        keys = pygame.key.get_pressed()
+
+        move = Point(0, 0)
+
+        if keys[pygame.K_LEFT]:
+            move.x -= 1
+        if keys[pygame.K_RIGHT]:
+            move.x += 1
+        if keys[pygame.K_UP]:
+            move.y -= 1
+        if keys[pygame.K_DOWN]:
+            move.y += 1
+
+        if move.x != 0 or move.y != 0:
+            length = math.hypot(move.x, move.y)
+            move = move / length
+            self.__global_pos += move * self.__SPEED 
 
 class Cat:
     def __init__(self, global_pos=Point(0, 0)):
@@ -594,13 +610,13 @@ class Cat:
         screen_center = screen_size / 2
 
         mx, my = pygame.mouse.get_pos()
-        mouse_pos = Point(mx, my)
+        cursor_pos = Point(mx, my)
 
-        to_mouse = mouse_pos - screen_center
+        to_cursor = cursor_pos - screen_center
 
         # Mouse direction in screen-space, with cat assumed at center of screen
-        if not (to_mouse.x == 0 and to_mouse.y == 0):
-            target_rot = math.atan2(to_mouse.y, to_mouse.x)
+        if not (to_cursor.x == 0 and to_cursor.y == 0):
+            target_rot = math.atan2(to_cursor.y, to_cursor.x)
 
             # Body only turns when moving
             if move_forward:
@@ -610,7 +626,7 @@ class Cat:
                     self.__MAX_BODY_ROT_DELTA
                 )
 
-            # Head always tries to track mouse
+            # Head always tries to track cursor
             self.__head_rot = self.__rotate_towards(
                 self.__head_rot,
                 target_rot,
@@ -674,13 +690,8 @@ class Game:
             self.__clock.tick(120)
 
     def __tick(self):
-        mouse_buttons = pygame.mouse.get_pressed()
-        keys = pygame.key.get_pressed()
-
-        if mouse_buttons[0]:
-            mx, my = pygame.mouse.get_pos()
-
         self.__cat.tick(self)
+        self.__mouse.tick(self)
 
 
     def get_camera_position(self):
