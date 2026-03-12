@@ -1097,17 +1097,25 @@ class Mouse:
                 self.__MAX_ROT_DELTA
             )
 
-
 class Cat:
+    CAT_WALKING = "walking"
+    CAT_STANDING = "standing"
+    CAT_POUNCING = "pouncing"
+    CAT_STALKING = "stalking"
+    CAT_CROUCHING = "crouching"
+
     def __init__(self, global_pos=Point(0, 0)):
         self.__head_rot = 0.0
         self.__body_rot = 0.0
         self.__global_pos = global_pos.copy()
+        self.__state = Cat.CAT_STANDING
 
         self.__MAX_BODY_ROT_DELTA = 0.08
         self.__MAX_HEAD_ROT_DELTA = 0.18
         self.__MAX_HEAD_OFFSET = 1.3
-        self.__MAX_MOVE_SPEED = 4.0
+        self.__STALK_MOVE_SPEED = 1.5
+        self.__WALK_MOVE_SPEED = 4.0
+        self.__POUNCE_MOVE_SPEED = 10.0
         self.__HEAD_OFFSET = 30
 
     def get_position(self):
@@ -1129,16 +1137,23 @@ class Cat:
             color=(247, 134, 27)
         )
 
-        body = Polygon(
-            global_position=self.__global_pos,
-            rot=self.__body_rot,
-            size=20,
-            points=[
+        body_points = [
+                Point(-1, -0.6),
+                Point(-1, 0.6),
+                Point(2, 0.6),
+                Point(2, -0.6)
+            ] if self.__state == Cat.CAT_CROUCHING else [
                 Point(-2, -0.6),
                 Point(-2, 0.6),
                 Point(2, 0.6),
                 Point(2, -0.6)
-            ],
+            ]
+
+        body = Polygon(
+            global_position=self.__global_pos,
+            rot=self.__body_rot,
+            size=20,
+            points=body_points,
             color=(255, 146, 56)
         )
 
@@ -1162,19 +1177,7 @@ class Cat:
         
         textbuffer = game.get_bl_textbuffer()
         textbuffer.clear()
-        textbuffer.add("hi there")
-        textbuffer.add("hi there")
-        textbuffer.add("hi there")
-        textbuffer.add("hi there")
-        textbuffer.add("hi there")
-        textbuffer.add("hi there")
-        textbuffer.add("hi there")
-        textbuffer.add("hi there")
-        textbuffer.add("hi there")
-        textbuffer.add("hi there")
-        textbuffer.add("hi there")
-        textbuffer.add("hi there")
-
+        textbuffer.add(f'cat state: {self.__state}')
 
     def __wrap_angle(self, angle):
         while angle > math.pi:
@@ -1202,7 +1205,10 @@ class Cat:
             self.__head_rot = self.__wrap_angle(self.__body_rot - self.__MAX_HEAD_OFFSET)
 
     def tick(self, game):
-        move_forward = pygame.mouse.get_pressed()[0] or pygame.key.get_pressed()[pygame.K_SPACE]
+        pounce_pressed = pygame.key.get_pressed()[pygame.K_q]
+        walk_pressed = pygame.key.get_pressed()[pygame.K_w]
+        stalk_pressed = pygame.key.get_pressed()[pygame.K_e]
+        crouch_pressed = pygame.key.get_pressed()[pygame.K_r]
 
         screen_size = game.get_screen_size()
         screen_center = screen_size / 2
@@ -1212,12 +1218,13 @@ class Cat:
 
         to_cursor = cursor_pos - screen_center
 
-        # Mouse direction in screen-space, with cat assumed at center of screen
+        self.__state = Cat.CAT_WALKING
+
         if not (to_cursor.x == 0 and to_cursor.y == 0):
             target_rot = math.atan2(to_cursor.y, to_cursor.x)
 
             # Body only turns when moving
-            if move_forward:
+            if walk_pressed or pounce_pressed or stalk_pressed:
                 self.__body_rot = self.__rotate_towards(
                     self.__body_rot,
                     target_rot,
@@ -1234,8 +1241,19 @@ class Cat:
         # Head must stay within allowed range of body
         self.__clamp_head_to_body_range()
 
-        if move_forward:
-            self.__global_pos += Point.from_angle(self.__body_rot, self.__MAX_MOVE_SPEED)
+        if walk_pressed:
+            self.__state = Cat.CAT_WALKING
+            self.__global_pos += Point.from_angle(self.__body_rot, self.__WALK_MOVE_SPEED)
+        elif pounce_pressed:
+            self.__state = Cat.CAT_POUNCING
+            self.__global_pos += Point.from_angle(self.__body_rot, self.__POUNCE_MOVE_SPEED)
+        elif stalk_pressed:
+            self.__state = Cat.CAT_STALKING
+            self.__global_pos += Point.from_angle(self.__body_rot, self.__STALK_MOVE_SPEED)
+        elif crouch_pressed:
+            self.__state = Cat.CAT_CROUCHING
+            
+        
 
 
 class Preferences:
