@@ -533,55 +533,120 @@ class RRTNode:
     def __init__(self, parent, position: Point, game):
         cat_pos = game.get_cat().get_head_position()
         self.parent = parent
-        self.postion = position
+        self.position = position.copy()
         self.distance_to_cat = get_distance(position, cat_pos)
-        
-        hit = game.get_obstacle_container().raycast_first(cat_pos, position)
+        self.viewable_by_cat = False
+
+    def update_viewable_by_cat(self, game):
+        cat_pos = game.get_cat().get_head_position()
+        hit = game.get_obstacle_container().raycast_first(cat_pos, self.position)
         self.viewable_by_cat = hit is None
 
-    # def draw(self, game):
+    def draw(self, game):
+        cat_pos = game.get_cat().get_head_position()
 
+        hit = game.get_obstacle_container().raycast_first(cat_pos, self.position)
+        viewable = (hit is None)
 
-def create_rrt(game, start_pos=Point(166, 0), step_size=40, search_size=1550, rays_per_step = 10):
+        distance = get_distance(self.position, cat_pos)
+
+        if viewable:
+            max_range = game.get_preferences().motion_viewable_range
+            t = min(distance / max_range, 1.0)
+
+            # bright green when close, darker green when far
+            green = int(255 - (200 * t))   # 255 -> 100
+            color = (0, green, 0)
+        else:
+            color = (255, 0, 0)
+
+        square = Polygon(
+            global_position=self.position,
+            rot=0.0,
+            size=4,
+            points=[
+                Point(-1, -1),
+                Point(1, -1),
+                Point(1, 1),
+                Point(-1, 1)
+            ],
+            color=color
+        )
+
+        square.draw(game.get_screen(), game.get_camera_position())
+
+def create_rrt(game, start_pos=Point(166, 0), step_size=50, search_size=1050, rays_per_step=10):
     total_segments = []
-    point_queue = Queue()
-    point_queue.put(start_pos)
+
+    node_queue = Queue()
+
+    start_node = RRTNode(None, start_pos, game)
+    node_queue.put(start_node)
+
+    nodes = [start_node]
+
     steps = 0
-    while(not point_queue.empty() and steps < search_size):
+
+    while (not node_queue.empty()) and steps < search_size:
         inner_segments = []
-        current_point = point_queue.get()
+
+        current_node = node_queue.get()
+        current_point = current_node.position
+
         for i in range(rays_per_step):
             steps += 1
             angle = (i / rays_per_step) * (2 * math.pi)
-            start, end = generate_line_from_point(current_point, angle, game.get_obstacle_container(), max_distance=step_size)
+
+            start, end = generate_line_from_point(
+                current_point,
+                angle,
+                game.get_obstacle_container(),
+                max_distance=step_size
+            )
+
             segment = Segment(start, end, color=(0, 100, 0), width=2)
             segment.shave_start(6)
             segment.shave_end(3)
+
             real_end = segment.get_end()
             is_line_left = segment.shave_end(3)
 
-            if(not is_line_left):
+            if not is_line_left:
                 continue
-            
+
             polygon_segment = segment.to_polygon()
-            polygon_segment.draw(game.get_screen(), game.get_camera_position())
+
             inner_segments.append(polygon_segment)
             total_segments.append(polygon_segment)
-            point_queue.put(real_end)
 
+            new_node = RRTNode(current_node, real_end, game)
+            new_node.update_viewable_by_cat(game)
+
+            nodes.append(new_node)
+            node_queue.put(new_node)
 
         for segment in inner_segments:
             game.get_obstacle_container().add_obstacle(segment)
 
     for segment in total_segments:
         game.get_obstacle_container().remove_obstacle(segment)
-        
+    
+    for node in nodes:
+        node.update_viewable_by_cat(game)
+        node.draw(game)
+
+    return nodes
+
+def draw_rrt(nodes: [RRTNode], game):
+    for node in nodes:
+        node.draw(game)
 
 class Mouse:
     def __init__(self, global_pos=Point(50, 0)):
         self.__global_pos = global_pos.copy()
         self.__rot = 0
         self.__SPEED = 4
+        self.__rrt = []
 
     def draw(self, game):
         body = Polygon(
@@ -595,10 +660,12 @@ class Mouse:
             ],
             color=(255, 0, 255)
         )
+        draw_rrt(self.__rrt, game)
         body.draw(game.get_screen(), game.get_camera_position())
-        create_rrt(game, self.__global_pos)
+        
 
     def tick(self, game):
+        self.__rrt = create_rrt(game, self.__global_pos)
         keys = pygame.key.get_pressed()
 
         move = Point(0, 0)
