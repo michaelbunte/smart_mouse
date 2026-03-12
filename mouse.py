@@ -2,7 +2,8 @@ import math
 import pygame
 import sys
 import random
-from rtree import index
+import pymunk
+
 
 UPDATE_MS = 10
 CAMERA_SPEED = 5
@@ -276,27 +277,55 @@ def generate_random_map(width, height, object_count, obstacle_container, seed):
 
 class ObstacleContainer:
     def __init__(self):
-        self.__index = index.Index()
-        self.__obstacles = {}
-        self.__next_id = 0
+        self.__space = pymunk.Space()
+        self.__shape_to_polygon = {}
+        self.__polygon_to_shape = {}
 
-    def add_obstacle(self, obstacle, bbox):
-        obstacle_id = self.__next_id
-        self.__next_id += 1
+    def add_obstacle(self, polygon, bbox=None):
+        pos = polygon.get_global_position()
+        rot = polygon.get_rotation()
+        size = polygon.get_size()
 
-        self.__index.insert(obstacle_id, bbox)
-        self.__obstacles[obstacle_id] = (obstacle, bbox)
+        verts = [
+            (p.x * size, p.y * size)
+            for p in polygon.get_points()
+        ]
 
-        return obstacle_id
+        body = pymunk.Body(body_type=pymunk.Body.STATIC)
+        body.position = (pos.x, pos.y)
+        body.angle = rot
 
-    def remove_obstacle(self, obstacle_id):
-        obstacle, bbox = self.__obstacles[obstacle_id]
-        self.__index.delete(obstacle_id, bbox)
-        del self.__obstacles[obstacle_id]
+        shape = pymunk.Poly(body, verts)
+        shape.sensor = True
+
+        self.__space.add(body, shape)
+        self.__shape_to_polygon[shape] = polygon
+        self.__polygon_to_shape[polygon] = shape
+
+        return shape
+
+    def remove_obstacle(self, polygon):
+        shape = self.__polygon_to_shape[polygon]
+        body = shape.body
+
+        self.__space.remove(shape, body)
+        del self.__shape_to_polygon[shape]
+        del self.__polygon_to_shape[polygon]
 
     def query_box(self, min_x, min_y, max_x, max_y):
-        ids = self.__index.intersection((min_x, min_y, max_x, max_y))
-        return [self.__obstacles[i][0] for i in ids]
+        bb = pymunk.BB(min_x, min_y, max_x, max_y)
+        shapes = self.__space.bb_query(bb, pymunk.ShapeFilter())
+
+        result = []
+        seen = set()
+
+        for shape in shapes:
+            poly = self.__shape_to_polygon.get(shape)
+            if poly is not None and poly not in seen:
+                seen.add(poly)
+                result.append(poly)
+
+        return result
 
     def get_obstacles_on_screen(self, game):
         camera = game.get_camera_position()
@@ -307,17 +336,39 @@ class ObstacleContainer:
         max_x = camera.x + screen_size.x
         max_y = camera.y + screen_size.y
 
-        ids = self.__index.intersection((min_x, min_y, max_x, max_y))
-        return [self.__obstacles[i][0] for i in ids]
+        return self.query_box(min_x, min_y, max_x, max_y)
 
     def draw_obstacles(self, game):
         screen = game.get_screen()
         camera_position = game.get_camera_position()
 
-        obstacles = self.get_obstacles_on_screen(game)
-
-        for obstacle in obstacles:
+        for obstacle in self.get_obstacles_on_screen(game):
             obstacle.draw(screen, camera_position)
+
+    def raycast_first(self, start: Point, end: Point):
+        hit = self.__space.segment_query_first(
+            (start.x, start.y),
+            (end.x, end.y),
+            0.0,
+            pymunk.ShapeFilter()
+        )
+
+        if hit is None:
+            return None
+
+        shape = hit.shape
+        poly = self.__shape_to_polygon.get(shape)
+
+        return {
+            "polygon": poly,
+            "point": Point(hit.point.x, hit.point.y),
+            "normal": Point(hit.normal.x, hit.normal.y),
+            "alpha": hit.alpha,
+            "distance": math.hypot(
+                hit.point.x - start.x,
+                hit.point.y - start.y
+            )
+        }
     
 class Cat:
     def __init__(self, global_pos=Point(0, 0)):
