@@ -658,7 +658,7 @@ class Mouse:
                 Point(0, 1),
                 Point(2, 0)
             ],
-            color=(255, 0, 255)
+            color=(255, 255, 255)
         )
         draw_rrt(self.__rrt, game)
         body.draw(game.get_screen(), game.get_camera_position())
