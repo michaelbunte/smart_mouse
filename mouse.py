@@ -5,7 +5,6 @@ import random
 import pymunk
 from queue import Queue
 
-
 UPDATE_MS = 10
 CAMERA_SPEED = 5
 
@@ -496,24 +495,34 @@ class ObstacleContainer:
             pymunk.ShapeFilter()
         )
 
+        best_hit = None
+        best_alpha = None
+
         for hit in hits:
             shape = hit.shape
             if shape not in self.__shape_to_polygon:
                 continue
 
-            poly = self.__shape_to_polygon[shape]
-            return {
-                "polygon": poly,
-                "point": Point(hit.point.x, hit.point.y),
-                "normal": Point(hit.normal.x, hit.normal.y),
-                "alpha": hit.alpha,
-                "distance": math.hypot(
-                    hit.point.x - start.x,
-                    hit.point.y - start.y
-                )
-            }
+            if best_hit is None or hit.alpha < best_alpha:
+                best_hit = hit
+                best_alpha = hit.alpha
 
-        return None
+        if best_hit is None:
+            return None
+
+        shape = best_hit.shape
+        poly = self.__shape_to_polygon[shape]
+
+        return {
+            "polygon": poly,
+            "point": Point(best_hit.point.x, best_hit.point.y),
+            "normal": Point(best_hit.normal.x, best_hit.normal.y),
+            "alpha": best_hit.alpha,
+            "distance": math.hypot(
+                best_hit.point.x - start.x,
+                best_hit.point.y - start.y
+            )
+        }
 
 def generate_line_from_point(point: Point, rot: float, obstacle_container, max_distance=1000):
     start = point.copy()
@@ -892,7 +901,7 @@ class Mouse:
             radius=0.0001,
             mass=1.0,
             elasticity=1.0,
-            friction=0.9
+            friction=1.0
         )
 
         self.__body.damping = 0.2
