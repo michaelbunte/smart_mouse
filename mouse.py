@@ -301,7 +301,11 @@ class Cat:
         self.__head_rot = 0.0
         self.__body_rot = 0.0
         self.global_pos = global_pos.copy()
-        self.max_rot_delta = 0.08  # radians per tick
+
+        self.max_body_rot_delta = 0.08   # radians per tick
+        self.max_head_rot_delta = 0.18   # radians per tick
+        self.max_head_offset = 0.9       # max radians head can differ from body
+        self.move_speed = 4.0            # units per tick
 
     def get_position(self):
         return self.global_pos.copy()
@@ -326,30 +330,43 @@ class Cat:
             points=[
                 Point(-2, -0.6),
                 Point(-2, 0.6),
-                Point( 2, 0.6),
-                Point( 2, -0.6)
+                Point(2, 0.6),
+                Point(2, -0.6)
             ],
             color=(255, 146, 56)
         )
 
-        body.draw(
-            game.get_screen(),
-            game.get_camera_position()
-        )
+        body.draw(game.get_screen(), game.get_camera_position())
+        head.draw(game.get_screen(), game.get_camera_position())
 
-        head.draw(
-            game.get_screen(),
-            game.get_camera_position()
-        )
-
-    def _wrap_angle(self, angle):
+    def __wrap_angle(self, angle):
         while angle > math.pi:
             angle -= 2.0 * math.pi
         while angle < -math.pi:
             angle += 2.0 * math.pi
         return angle
 
+    def __rotate_towards(self, current, target, max_delta):
+        diff = self.__wrap_angle(target - current)
+
+        if diff > max_delta:
+            diff = max_delta
+        elif diff < -max_delta:
+            diff = -max_delta
+
+        return self.__wrap_angle(current + diff)
+
+    def __clamp_head_to_body_range(self):
+        diff = self.__wrap_angle(self.__head_rot - self.__body_rot)
+
+        if diff > self.max_head_offset:
+            self.__head_rot = self.__wrap_angle(self.__body_rot + self.max_head_offset)
+        elif diff < -self.max_head_offset:
+            self.__head_rot = self.__wrap_angle(self.__body_rot - self.max_head_offset)
+
     def tick(self, game):
+        move_forward = pygame.mouse.get_pressed()[0] or pygame.key.get_pressed()[pygame.K_SPACE]
+
         screen_size = game.get_screen_size()
         screen_center = screen_size / 2
 
@@ -358,24 +375,33 @@ class Cat:
 
         to_mouse = mouse_pos - screen_center
 
-        # Avoid unstable atan2(0, 0) behavior when cursor is exactly centered
-        if to_mouse.x == 0 and to_mouse.y == 0:
-            return
+        # Mouse direction in screen-space, with cat assumed at center of screen
+        if not (to_mouse.x == 0 and to_mouse.y == 0):
+            target_rot = math.atan2(to_mouse.y, to_mouse.x)
 
-        target_rot = math.atan2(to_mouse.y, to_mouse.x)
+            # Body only turns when moving
+            if move_forward:
+                self.__body_rot = self.__rotate_towards(
+                    self.__body_rot,
+                    target_rot,
+                    self.max_body_rot_delta
+                )
 
-        angle_diff = self._wrap_angle(target_rot - self.__head_rot)
+            # Head always tries to track mouse
+            self.__head_rot = self.__rotate_towards(
+                self.__head_rot,
+                target_rot,
+                self.max_head_rot_delta
+            )
 
-        if angle_diff > self.max_rot_delta:
-            angle_diff = self.max_rot_delta
-        elif angle_diff < -self.max_rot_delta:
-            angle_diff = -self.max_rot_delta
+        # Head must stay within allowed range of body
+        self.__clamp_head_to_body_range()
 
-        self.__head_rot = self._wrap_angle(self.__head_rot + angle_diff)
+        if move_forward:
+            self.global_pos += Point.from_angle(self.__body_rot, self.move_speed)
 
 class Game:
     def __init__(self):
-        self.__camera_position = Point(0.0, 0.0)
         self.__obstacle_container = ObstacleContainer()
         self.__clock = pygame.time.Clock()
         self.__last_update = pygame.time.get_ticks()
