@@ -641,12 +641,195 @@ def draw_rrt(nodes: [RRTNode], game):
     for node in nodes:
         node.draw(game)
 
+class BestRRT:
+    def __init__(self, nodes: [RRTNode], game):
+        self.scram = None
+        self.close = None
+        self.closest_to_taunt_distance_far = None
+        self.closest_to_taunt_distance_medium = None
+        self.closest_to_taunt_distance_close = None
+        self.out_of_sight = None
+        self.strafe_clockwise = None
+        self.strafe_counterclockwise = None
+
+        if not nodes:
+            return
+
+        cat_pos = game.get_cat().get_head_position()
+        mouse_pos = game.get_mouse().get_position()
+        prefs = game.get_preferences()
+
+        visible_nodes = [n for n in nodes if n.viewable_by_cat]
+        hidden_nodes = [n for n in nodes if not n.viewable_by_cat]
+
+        mouse_dist = get_distance(cat_pos, mouse_pos)
+        mouse_angle = get_direction(cat_pos, mouse_pos)
+
+        # farthest from cat
+        self.scram = max(nodes, key=lambda n: get_distance(cat_pos, n.position))
+
+        # closest to cat
+        self.close = min(nodes, key=lambda n: get_distance(cat_pos, n.position))
+
+        # closest out of sight
+        if hidden_nodes:
+            self.out_of_sight = min(hidden_nodes, key=lambda n: get_distance(cat_pos, n.position))
+
+        self.closest_to_taunt_distance_far = self.__best_taunt_node(
+            visible_nodes,
+            cat_pos,
+            mouse_pos,
+            prefs.taunt_distance_far
+        )
+
+        self.closest_to_taunt_distance_medium = self.__best_taunt_node(
+            visible_nodes,
+            cat_pos,
+            mouse_pos,
+            prefs.taunt_distance_medium
+        )
+
+        self.closest_to_taunt_distance_close = self.__best_taunt_node(
+            visible_nodes,
+            cat_pos,
+            mouse_pos,
+            prefs.taunt_distance_close
+        )
+
+        self.strafe_clockwise = self.__best_strafe_node(
+            visible_nodes,
+            cat_pos,
+            mouse_angle,
+            mouse_dist,
+            clockwise=True
+        )
+
+        self.strafe_counterclockwise = self.__best_strafe_node(
+            visible_nodes,
+            cat_pos,
+            mouse_angle,
+            mouse_dist,
+            clockwise=False
+        )
+
+    def __wrap_angle(self, angle):
+        while angle > math.pi:
+            angle -= 2.0 * math.pi
+        while angle < -math.pi:
+            angle += 2.0 * math.pi
+        return angle
+
+    def __point_line_metrics(self, a: Point, b: Point, p: Point):
+        abx = b.x - a.x
+        aby = b.y - a.y
+        apx = p.x - a.x
+        apy = p.y - a.y
+
+        ab_len_sq = abx * abx + aby * aby
+        if ab_len_sq <= 1e-9:
+            return 0.0, get_distance(a, p)
+
+        proj = (apx * abx + apy * aby) / ab_len_sq
+
+        closest_x = a.x + abx * proj
+        closest_y = a.y + aby * proj
+
+        perp_dist = math.hypot(p.x - closest_x, p.y - closest_y)
+        return proj, perp_dist
+
+    def __best_taunt_node(self, visible_nodes, cat_pos, mouse_pos, target_distance):
+        if not visible_nodes:
+            return None
+
+        on_segment = []
+        for node in visible_nodes:
+            proj, perp_dist = self.__point_line_metrics(cat_pos, mouse_pos, node.position)
+
+            # "on the line between the mouse and the cat"
+            if 0.0 <= proj <= 1.0:
+                on_segment.append((node, perp_dist))
+
+        candidates = on_segment if on_segment else [(node, self.__point_line_metrics(cat_pos, mouse_pos, node.position)[1]) for node in visible_nodes]
+
+        def score(item):
+            node, perp_dist = item
+            dist = get_distance(cat_pos, node.position)
+
+            # prefer correct radial distance first, then closeness to the cat-mouse line
+            return (
+                abs(dist - target_distance),
+                perp_dist,
+                dist
+            )
+
+        return min(candidates, key=score)[0]
+
+    def __best_strafe_node(self, visible_nodes, cat_pos, base_angle, base_distance, clockwise: bool):
+        if not visible_nodes:
+            return None
+
+        candidates = []
+
+        for node in visible_nodes:
+            node_angle = get_direction(cat_pos, node.position)
+            angle_diff = self.__wrap_angle(node_angle - base_angle)
+            dist = get_distance(cat_pos, node.position)
+
+            # In screen coordinates, positive angle tends to look clockwise.
+            # If this feels reversed visually, swap the two comparisons below.
+            if clockwise and angle_diff <= 0:
+                continue
+            if (not clockwise) and angle_diff >= 0:
+                continue
+
+            candidates.append(node)
+
+        if not candidates:
+            return None
+
+        def score(node):
+            dist = get_distance(cat_pos, node.position)
+            node_angle = get_direction(cat_pos, node.position)
+            angle_diff = abs(self.__wrap_angle(node_angle - base_angle))
+
+            # prefer same radius as mouse, then smallest lateral move
+            return (
+                abs(dist - base_distance),
+                angle_diff,
+                dist
+            )
+
+        return min(candidates, key=score)
+
+def get_angle_rrt(node: RRTNode):
+    if node is None:
+        return None
+
+    current = node
+    prev = None
+
+    # walk upward until we reach the root
+    while current.parent is not None:
+        prev = current
+        current = current.parent
+
+    root = current
+    first_generation = prev
+
+    if first_generation is None:
+        return None
+
+    return get_direction(root.position, first_generation.position)
+
 class Mouse:
     def __init__(self, global_pos=Point(50, 0)):
         self.__global_pos = global_pos.copy()
         self.__rot = 0
         self.__SPEED = 4
         self.__rrt = []
+
+    def get_position(self):
+        return self.__global_pos.copy()
 
     def draw(self, game):
         body = Polygon(
@@ -666,23 +849,32 @@ class Mouse:
 
     def tick(self, game):
         self.__rrt = create_rrt(game, self.__global_pos)
-        keys = pygame.key.get_pressed()
+        best_rrt = BestRRT(self.__rrt, game)
+        
+        if(best_rrt.out_of_sight is not None):
+            angle = get_angle_rrt(best_rrt.out_of_sight)
+            if (angle is not None):
+                move = Point.from_angle(angle, 1)
+                self.__global_pos += move * self.__SPEED 
 
-        move = Point(0, 0)
 
-        if keys[pygame.K_LEFT]:
-            move.x -= 1
-        if keys[pygame.K_RIGHT]:
-            move.x += 1
-        if keys[pygame.K_UP]:
-            move.y -= 1
-        if keys[pygame.K_DOWN]:
-            move.y += 1
+        # keys = pygame.key.get_pressed()
 
-        if move.x != 0 or move.y != 0:
-            length = math.hypot(move.x, move.y)
-            move = move / length
-            self.__global_pos += move * self.__SPEED 
+        # move = Point(0, 0)
+
+        # if keys[pygame.K_LEFT]:
+        #     move.x -= 1
+        # if keys[pygame.K_RIGHT]:
+        #     move.x += 1
+        # if keys[pygame.K_UP]:
+        #     move.y -= 1
+        # if keys[pygame.K_DOWN]:
+        #     move.y += 1
+
+        # if move.x != 0 or move.y != 0:
+        #     length = math.hypot(move.x, move.y)
+        #     move = move / length
+        #     self.__global_pos += move * self.__SPEED 
 
 
 class Cat:
@@ -813,6 +1005,9 @@ class Preferences:
     def __init__(self):
         self.stationary_range = 200
         self.motion_viewable_range = 600
+        self.taunt_distance_close = 100
+        self.taunt_distance_medium = 200
+        self.taunt_distance_far = 300
         
 class Game:
     def __init__(self):
@@ -842,6 +1037,9 @@ class Game:
     
     def get_cat(self):
         return self.__cat
+    
+    def get_mouse(self):
+        return self.__mouse
 
     def get_preferences(self):
         return self.__preferences
