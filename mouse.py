@@ -126,33 +126,6 @@ class Polygon:
     def set_color(self, color):
         self.__color = color
 
-    def __compute_aabb_center(self):
-        cos_r = math.cos(self.__rot)
-        sin_r = math.sin(self.__rot)
-
-        xs = []
-        ys = []
-
-        for p in self.__points:
-            x = p.x * self.__size
-            y = p.y * self.__size
-
-            xr = x * cos_r - y * sin_r
-            yr = x * sin_r + y * cos_r
-
-            xs.append(xr + self.__global_position.x)
-            ys.append(yr + self.__global_position.y)
-
-        min_x = min(xs)
-        max_x = max(xs)
-        min_y = min(ys)
-        max_y = max(ys)
-
-        cx = (min_x + max_x) * 0.5
-        cy = (min_y + max_y) * 0.5
-
-        return Point(cx, cy)
-
     def add_to_obstacle_container(self, obstacle_container):
         bbox = self.compute_aabb()
         obstacle_container.add_obstacle(self, bbox)
@@ -201,6 +174,56 @@ class Polygon:
         max_y = max(ys)
 
         return (min_x, min_y, max_x, max_y)
+    
+class Line:
+    def __init__(self, start: Point, end: Point, color=(255, 255, 255), width: int = 1):
+        self.__start = start.copy()
+        self.__end = end.copy()
+        self.__color = color
+        self.__width = width
+
+    # ----- start -----
+    def get_start(self):
+        return self.__start
+
+    def set_start(self, p: Point):
+        self.__start = p.copy()
+
+    # ----- end -----
+    def get_end(self):
+        return self.__end
+
+    def set_end(self, p: Point):
+        self.__end = p.copy()
+
+    # ----- color -----
+    def get_color(self):
+        return self.__color
+
+    def set_color(self, color):
+        self.__color = color
+
+    # ----- width -----
+    def get_width(self):
+        return self.__width
+
+    def set_width(self, width: int):
+        self.__width = width
+
+    def draw(self, surface, camera_position):
+        x1 = self.__start.x - camera_position.x
+        y1 = self.__start.y - camera_position.y
+
+        x2 = self.__end.x - camera_position.x
+        y2 = self.__end.y - camera_position.y
+
+        pygame.draw.line(
+            surface,
+            self.__color,
+            (x1, y1),
+            (x2, y2),
+            self.__width
+        )
 
 def generate_random_map(width, height, object_count, obstacle_container, seed):
     rng = random.Random(seed)
@@ -300,19 +323,19 @@ class Cat:
     def __init__(self, global_pos=Point(0, 0)):
         self.__head_rot = 0.0
         self.__body_rot = 0.0
-        self.global_pos = global_pos.copy()
+        self.__global_pos = global_pos.copy()
 
-        self.max_body_rot_delta = 0.08   # radians per tick
-        self.max_head_rot_delta = 0.18   # radians per tick
-        self.max_head_offset = 0.9       # max radians head can differ from body
-        self.move_speed = 4.0            # units per tick
+        self.__MAX_BODY_ROT_DELTA = 0.08
+        self.__MAX_HEAD_ROT_DELTA = 0.18
+        self.__MAX_HEAD_OFFSET = 1.3
+        self.__MAX_MOVE_SPEED = 4.0
 
     def get_position(self):
-        return self.global_pos.copy()
+        return self.__global_pos.copy()
 
     def draw(self, game):
         head = Polygon(
-            global_position=(self.global_pos + Point.from_angle(self.__body_rot, 30)),
+            global_position=(self.__global_pos + Point.from_angle(self.__body_rot, 30)),
             rot=self.__head_rot,
             size=20,
             points=[
@@ -324,7 +347,7 @@ class Cat:
         )
 
         body = Polygon(
-            global_position=self.global_pos,
+            global_position=self.__global_pos,
             rot=self.__body_rot,
             size=20,
             points=[
@@ -359,10 +382,10 @@ class Cat:
     def __clamp_head_to_body_range(self):
         diff = self.__wrap_angle(self.__head_rot - self.__body_rot)
 
-        if diff > self.max_head_offset:
-            self.__head_rot = self.__wrap_angle(self.__body_rot + self.max_head_offset)
-        elif diff < -self.max_head_offset:
-            self.__head_rot = self.__wrap_angle(self.__body_rot - self.max_head_offset)
+        if diff > self.__MAX_HEAD_OFFSET:
+            self.__head_rot = self.__wrap_angle(self.__body_rot + self.__MAX_HEAD_OFFSET)
+        elif diff < -self.__MAX_HEAD_OFFSET:
+            self.__head_rot = self.__wrap_angle(self.__body_rot - self.__MAX_HEAD_OFFSET)
 
     def tick(self, game):
         move_forward = pygame.mouse.get_pressed()[0] or pygame.key.get_pressed()[pygame.K_SPACE]
@@ -384,21 +407,21 @@ class Cat:
                 self.__body_rot = self.__rotate_towards(
                     self.__body_rot,
                     target_rot,
-                    self.max_body_rot_delta
+                    self.__MAX_BODY_ROT_DELTA
                 )
 
             # Head always tries to track mouse
             self.__head_rot = self.__rotate_towards(
                 self.__head_rot,
                 target_rot,
-                self.max_head_rot_delta
+                self.__MAX_HEAD_ROT_DELTA
             )
 
         # Head must stay within allowed range of body
         self.__clamp_head_to_body_range()
 
         if move_forward:
-            self.global_pos += Point.from_angle(self.__body_rot, self.move_speed)
+            self.__global_pos += Point.from_angle(self.__body_rot, self.__MAX_MOVE_SPEED)
 
 class Game:
     def __init__(self):
@@ -408,7 +431,7 @@ class Game:
         self.__cat = Cat()
         
         pygame.init()
-        self.__current_screen_size = Point(800, 600)
+        self.__current_screen_size = Point(1000, 800)
         self.__screen = pygame.display.set_mode((
             int(self.__current_screen_size.x),
             int(self.__current_screen_size.y)
@@ -442,6 +465,8 @@ class Game:
             self.__screen.fill((30, 30, 30))
             self.__obstacle_container.draw_obstacles(self)
             self.__cat.draw(self)
+            line = Line(Point(0, 0), Point(100, 50))
+            line.draw(self.__screen, self.get_camera_position())
             pygame.display.flip()
             self.__clock.tick(120)
 
