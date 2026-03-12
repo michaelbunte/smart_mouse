@@ -3,6 +3,7 @@ import pygame
 import sys
 import random
 import pymunk
+from queue import Queue
 
 
 UPDATE_MS = 10
@@ -184,14 +185,14 @@ class Segment:
 
     # ----- start -----
     def get_start(self):
-        return self.__start
+        return self.__start.copy()
 
     def set_start(self, p: Point):
         self.__start = p.copy()
 
     # ----- end -----
     def get_end(self):
-        return self.__end
+        return self.__end.copy()
 
     def set_end(self, p: Point):
         self.__end = p.copy()
@@ -223,6 +224,69 @@ class Segment:
             (x1, y1),
             (x2, y2),
             self.__width
+        )
+
+    def shave_start(self, distance: float) -> bool:
+        dx = self.__end.x - self.__start.x
+        dy = self.__end.y - self.__start.y
+
+        length = math.hypot(dx, dy)
+        if length <= 0 or distance >= length:
+            return False
+
+        t = distance / length
+
+        self.__start = Point(
+            self.__start.x + dx * t,
+            self.__start.y + dy * t
+        )
+
+        return True
+
+
+    def shave_end(self, distance: float) -> bool:
+        dx = self.__end.x - self.__start.x
+        dy = self.__end.y - self.__start.y
+
+        length = math.hypot(dx, dy)
+        if length <= 0 or distance >= length:
+            return False
+
+        t = distance / length
+
+        self.__end = Point(
+            self.__end.x - dx * t,
+            self.__end.y - dy * t
+        )
+
+        return True
+
+    def to_polygon(self):
+        dx = self.__end.x - self.__start.x
+        dy = self.__end.y - self.__start.y
+
+        length = math.hypot(dx, dy)
+        rot = math.atan2(dy, dx)
+
+        center = Point(
+            (self.__start.x + self.__end.x) * 0.5,
+            (self.__start.y + self.__end.y) * 0.5
+        )
+
+        half_length = length * 0.5
+        half_thickness = self.__width * 0.5
+
+        return Polygon(
+            global_position=center,
+            rot=rot,
+            size=1.0,
+            points=[
+                Point(-half_length, -half_thickness),
+                Point( half_length, -half_thickness),
+                Point( half_length,  half_thickness),
+                Point(-half_length,  half_thickness),
+            ],
+            color=self.__color
         )
 
 def generate_random_map(width, height, object_count, obstacle_container, seed):
@@ -309,9 +373,8 @@ class ObstacleContainer:
 
     def remove_obstacle(self, polygon):
         shape = self.__polygon_to_shape[polygon]
-        body = shape.body
 
-        self.__space.remove(shape, body)
+        self.__space.remove(shape)
         del self.__shape_to_polygon[shape]
         del self.__polygon_to_shape[polygon]
 
@@ -407,23 +470,7 @@ def generate_line_from_point(point: Point, rot: float, obstacle_container, max_d
     else:
         end = hit["point"]
 
-    return Segment(start, end, color=(255, 255, 0), width=2)
-
-def generate_line_from_point(point: Point, rot: float, obstacle_container, max_distance=1000):
-    start = point.copy()
-
-    direction = Point.from_angle(rot, max_distance)
-    far_point = start + direction
-
-    hit = obstacle_container.raycast_first(start, far_point)
-
-    if hit is None:
-        end = far_point
-    else:
-        end = hit["point"]
-
     return start, end
-
 
 def draw_ray_fan(
     screen,
@@ -478,6 +525,42 @@ def draw_ray_fan(
         # second segment
         Segment(mid, end, color=color_b, width=width).draw(screen, camera_position)
 
+def create_rrt(game, start_pos=Point(166, 0), step_size=40, search_size=1550, rays_per_step = 10):
+    
+    total_segments = []
+    point_queue = Queue()
+    point_queue.put(start_pos)
+    steps = 0
+    while(not point_queue.empty() and steps < search_size):
+        inner_segments = []
+        current_point = point_queue.get()
+        for i in range(rays_per_step):
+            steps += 1
+            angle = (i / rays_per_step) * (2 * math.pi)
+            start, end = generate_line_from_point(current_point, angle, game.get_obstacle_container(), max_distance=step_size)
+            segment = Segment(start, end, color=(0, 100, 0), width=2)
+            segment.shave_start(6)
+            segment.shave_end(3)
+            real_end = segment.get_end()
+            is_line_left = segment.shave_end(3)
+
+            if(not is_line_left):
+                continue
+            
+            polygon_segment = segment.to_polygon()
+            polygon_segment.draw(game.get_screen(), game.get_camera_position())
+            inner_segments.append(polygon_segment)
+            total_segments.append(polygon_segment)
+            point_queue.put(real_end)
+
+
+        for segment in inner_segments:
+            game.get_obstacle_container().add_obstacle(segment)
+
+    for segment in total_segments:
+        game.get_obstacle_container().remove_obstacle(segment)
+        
+
 class Mouse:
     def __init__(self, global_pos=Point(50, 0)):
         self.__global_pos = global_pos.copy()
@@ -497,6 +580,8 @@ class Mouse:
             color=(255, 0, 255)
         )
         body.draw(game.get_screen(), game.get_camera_position())
+        create_rrt(game, self.__global_pos)
+
     def tick(self, game):
         keys = pygame.key.get_pressed()
 
@@ -515,6 +600,7 @@ class Mouse:
             length = math.hypot(move.x, move.y)
             move = move / length
             self.__global_pos += move * self.__SPEED 
+
 
 class Cat:
     def __init__(self, global_pos=Point(0, 0)):
@@ -671,6 +757,7 @@ class Game:
         return self.__screen
 
     def __run_game(self):
+        create_rrt(self)
         while True:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
