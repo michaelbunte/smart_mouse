@@ -92,8 +92,8 @@ class Polygon:
         return Point(cx, cy)
 
     def add_to_obstacle_container(self, obstacle_container):
-        center = self.__compute_aabb_center()
-        obstacle_container.add_obstacle(self, center)
+        bbox = self.compute_aabb()
+        obstacle_container.add_obstacle(self, bbox)
 
     def draw(self, surface, camera_position, width=0):
         transformed = []
@@ -116,27 +116,48 @@ class Polygon:
         pygame.draw.polygon(surface, self.__color, transformed, width)
 
 
+    def compute_aabb(self):
+        cos_r = math.cos(self.__rot)
+        sin_r = math.sin(self.__rot)
+
+        xs = []
+        ys = []
+
+        for p in self.__points:
+            x = p.x * self.__size
+            y = p.y * self.__size
+
+            xr = x * cos_r - y * sin_r
+            yr = x * sin_r + y * cos_r
+
+            xs.append(xr + self.__global_position.x)
+            ys.append(yr + self.__global_position.y)
+
+        min_x = min(xs)
+        max_x = max(xs)
+        min_y = min(ys)
+        max_y = max(ys)
+
+        return (min_x, min_y, max_x, max_y)
+
+
 class ObstacleContainer:
     def __init__(self):
         self.__index = index.Index()
         self.__obstacles = {}
         self.__next_id = 0
 
-    def add_obstacle(self, obstacle, point: Point):
+    def add_obstacle(self, obstacle, bbox):
         obstacle_id = self.__next_id
         self.__next_id += 1
 
-        bbox = (point.x, point.y, point.x, point.y)
-
         self.__index.insert(obstacle_id, bbox)
-        self.__obstacles[obstacle_id] = (obstacle, point)
+        self.__obstacles[obstacle_id] = (obstacle, bbox)
 
         return obstacle_id
 
     def remove_obstacle(self, obstacle_id):
-        obstacle, point = self.__obstacles[obstacle_id]
-        bbox = (point.x, point.y, point.x, point.y)
-
+        obstacle, bbox = self.__obstacles[obstacle_id]
         self.__index.delete(obstacle_id, bbox)
         del self.__obstacles[obstacle_id]
 
@@ -144,12 +165,38 @@ class ObstacleContainer:
         ids = self.__index.intersection((min_x, min_y, max_x, max_y))
         return [self.__obstacles[i][0] for i in ids]
 
+    def get_obstacles_on_screen(self, game):
+        camera = game.get_camera_position()
+        screen_size = game.get_screen_size()
+
+        min_x = camera.x
+        min_y = camera.y
+        max_x = camera.x + screen_size.y
+        max_y = camera.y + screen_size.x
+
+        ids = self.__index.intersection((min_x, min_y, max_x, max_y))
+        return [self.__obstacles[i][0] for i in ids]
+
     def draw_obstacles(self, game):
         screen = game.get_screen()
         camera_position = game.get_camera_position()
 
-        for obstacle, _ in self.__obstacles.values():
+        obstacles = self.get_obstacles_on_screen(game)
+
+        for obstacle in obstacles:
             obstacle.draw(screen, camera_position)
+
+    def get_obstacles_on_screen(self, game):
+        camera = game.get_camera_position()
+        screen_size = game.get_screen_size()
+
+        min_x = camera.x
+        min_y = camera.y
+        max_x = camera.x + screen_size.y
+        max_y = camera.y + screen_size.x
+
+        ids = self.__index.intersection((min_x, min_y, max_x, max_y))
+        return [self.__obstacles[i][0] for i in ids]
 
 class Game:
     def __init__(self):
@@ -231,6 +278,8 @@ class Game:
     def get_camera_position(self):
         return self.__camera_position.copy()
     
+    def get_screen_size(self):
+        return self.__current_screen_size.copy()
 
 def main():
     Game()
