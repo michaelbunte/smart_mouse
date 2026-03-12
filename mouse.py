@@ -350,6 +350,27 @@ class ObstacleContainer:
             obstacle.draw(screen, camera_position)
 
     def raycast_first(self, start: Point, end: Point):
+        # First: detect if start is already inside a shape
+        point_hits = self.__space.point_query(
+            (start.x, start.y),
+            0.0,
+            pymunk.ShapeFilter()
+        )
+
+        for hit in point_hits:
+            # In Pymunk/Chipmunk, point-query distance is negative when inside
+            if hit.distance <= 0:
+                shape = hit.shape
+                poly = self.__shape_to_polygon.get(shape)
+                return {
+                    "polygon": poly,
+                    "point": start.copy(),
+                    "normal": Point(0, 0),
+                    "alpha": 0.0,
+                    "distance": 0.0
+                }
+
+        # Otherwise do the normal raycast
         hit = self.__space.segment_query_first(
             (start.x, start.y),
             (end.x, end.y),
@@ -374,7 +395,7 @@ class ObstacleContainer:
             )
         }
 
-def generate_line_from_point(point: Point, rot: float, obstacle_container, max_distance=2000):
+def generate_line_from_point(point: Point, rot: float, obstacle_container, max_distance=1000):
     start = point.copy()
 
     direction = Point.from_angle(rot, max_distance)
@@ -384,12 +405,34 @@ def generate_line_from_point(point: Point, rot: float, obstacle_container, max_d
 
     if hit is None:
         end = far_point
-        print("no hit")
     else:
         end = hit["point"]
-        print("hit")
 
     return Line(start, end, color=(255, 255, 0), width=2)
+
+def draw_ray_fan(screen, camera_position, obstacle_container, origin: Point, center_rot: float,
+                 fov_radians: float, ray_count: int, max_distance=1000,
+                 color=(255, 255, 0), width=2):
+    if ray_count <= 0:
+        return
+
+    if ray_count == 1:
+        angles = [center_rot]
+    else:
+        start_rot = center_rot - (fov_radians / 2.0)
+        step = fov_radians / (ray_count - 1)
+        angles = [start_rot + i * step for i in range(ray_count)]
+
+    for rot in angles:
+        line = generate_line_from_point(
+            origin,
+            rot,
+            obstacle_container,
+            max_distance=max_distance
+        )
+        line.set_color(color)
+        line.set_width(width)
+        line.draw(screen, camera_position)
 
 class Cat:
     def __init__(self, global_pos=Point(0, 0)):
@@ -435,14 +478,20 @@ class Cat:
             color=(255, 146, 56)
         )
 
-        line = generate_line_from_point(
-            self.__get_head_position(),
-            self.__head_rot,
-            game.get_obstacle_container()
+
+        draw_ray_fan(
+            screen=game.get_screen(),
+            camera_position=game.get_camera_position(),
+            obstacle_container=game.get_obstacle_container(),
+            origin=self.__get_head_position(),
+            center_rot=self.__head_rot,
+            fov_radians=2.5,
+            ray_count=100,
+            max_distance=1000,
+            color=(70, 70, 70),
+            width=2
         )
-
-        line.draw(game.get_screen(), game.get_camera_position())
-
+        
         body.draw(game.get_screen(), game.get_camera_position())
         head.draw(game.get_screen(), game.get_camera_position())
 
