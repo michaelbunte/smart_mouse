@@ -79,6 +79,10 @@ class Point:
         ox, oy = vals
         return Point(ox / self.x, oy / self.y)
 
+def get_distance(p1: Point, p2: Point):
+    dx = p2.x - p1.x
+    dy = p2.y - p1.y
+    return math.sqrt(dx * dx + dy * dy)
 
 def get_direction(p1: Point, p2: Point):
     dx = p2.x - p1.x
@@ -525,8 +529,20 @@ def draw_ray_fan(
         # second segment
         Segment(mid, end, color=color_b, width=width).draw(screen, camera_position)
 
+class RRTNode:
+    def __init__(self, parent, position: Point, game):
+        cat_pos = game.get_cat().get_head_position()
+        self.parent = parent
+        self.postion = position
+        self.distance_to_cat = get_distance(position, cat_pos)
+        
+        hit = game.get_obstacle_container().raycast_first(cat_pos, position)
+        self.viewable_by_cat = hit is None
+
+    # def draw(self, game):
+
+
 def create_rrt(game, start_pos=Point(166, 0), step_size=40, search_size=1550, rays_per_step = 10):
-    
     total_segments = []
     point_queue = Queue()
     point_queue.put(start_pos)
@@ -617,12 +633,12 @@ class Cat:
     def get_position(self):
         return self.__global_pos.copy()
     
-    def __get_head_position(self):
+    def get_head_position(self):
         return self.__global_pos + Point.from_angle(self.__body_rot, self.__HEAD_OFFSET)
 
     def draw(self, game):
         head = Polygon(
-            global_position=(self.__get_head_position()),
+            global_position=(self.get_head_position()),
             rot=self.__head_rot,
             size=20,
             points=[
@@ -650,7 +666,7 @@ class Cat:
             screen=game.get_screen(),
             camera_position=game.get_camera_position(),
             obstacle_container=game.get_obstacle_container(),
-            origin=self.__get_head_position(),
+            origin=self.get_head_position(),
             center_rot=self.__head_rot,
             fov_radians=2.5,
             ray_count=100,
@@ -725,6 +741,12 @@ class Cat:
         if move_forward:
             self.__global_pos += Point.from_angle(self.__body_rot, self.__MAX_MOVE_SPEED)
 
+
+class Preferences:
+    def __init__(self):
+        self.stationary_range = 200
+        self.motion_viewable_range = 600
+        
 class Game:
     def __init__(self):
         self.__obstacle_container = ObstacleContainer()
@@ -732,6 +754,7 @@ class Game:
         self.__last_update = pygame.time.get_ticks()
         self.__cat = Cat()
         self.__mouse = Mouse()
+        self.__preferences = Preferences()
         
         pygame.init()
         self.__current_screen_size = Point(1000, 800)
@@ -750,6 +773,12 @@ class Game:
 
         self.__run_game()
     
+    def get_cat(self):
+        return self.__cat
+
+    def get_preferences(self):
+        return self.__preferences
+
     def get_obstacle_container(self):
         return self.__obstacle_container
 
