@@ -1042,13 +1042,20 @@ def get_angle_rrt(node: RRTNode):
     return get_direction(root.position, first_generation.position)
 
 class CatInterestEstimator:
-    HIGH_INTEREST = 10.0
+    MAX_INTEREST = 10.0
+    IS_INTERESTED_MIN = 0
+    IS_UNINTERESTED_MAX = 0
+    IS_UNINTERESTED_MIN = -5
+    IS_SUPER_UNINTERESTED_MAX = -5
+    IS_SUPER_UNINTERESTED_MIN = -10
+    IS_SUPER_DUPER_UNINTERESTED_MAX = -10
+
     def __init__(self):
         self.__interest = 0
     
     def tick(self, cat):
         if cat.get_state() == Cat.CAT_CROUCHING or cat.get_state() == Cat.CAT_STALKING or cat.get_state() == Cat.CAT_POUNCING:
-            self.__interest = CatInterestEstimator.HIGH_INTEREST
+            self.__interest = CatInterestEstimator.MAX_INTEREST
         else:
             self.__interest -= 0.02
 
@@ -1062,6 +1069,7 @@ class Mouse:
         self.__rrt = []
         self.__best_rrt = BestRRT([], game)
         self.__FORCE = 4000
+        self.__DASH_FORCE = 12000
         self.__MAX_ROT_DELTA = 0.12
         self.__cat_interest_estimator = CatInterestEstimator()
 
@@ -1120,17 +1128,98 @@ class Mouse:
         current_pos = self.get_position()
 
         self.__cat_interest_estimator.tick(cat=game.get_cat())
+        cat_interest = self.__cat_interest_estimator.get_interest()
 
         tl_textbuffer = game.get_tl_textbuffer()
         tl_textbuffer.clear()
         tl_textbuffer.add(f"Estimated cat interest: {self.__cat_interest_estimator.get_interest():.2f}")
         
 
+        distance_to_cat = get_distance(game.get_cat().get_head_position(), self.get_position())
+
         self.__rrt = create_rrt(game, current_pos)
         self.__best_rrt = BestRRT(self.__rrt, game)
 
-        if self.__best_rrt.out_of_sight_far is not None:
-            angle = get_angle_rrt(self.__best_rrt.out_of_sight_far)
+        force = Point(0, 0)
+        target = "none selected"
+
+        if self.__best_rrt.scram and distance_to_cat < game.get_preferences().scram_distance_always:
+            target = "scram"
+            angle = get_angle_rrt(self.__best_rrt.scram)
+            if angle is not None:
+                force = Point.from_angle(angle, self.__DASH_FORCE)
+                self.__body.apply_force_at_world_point(
+                    (force.x, force.y),
+                    self.__body.position
+                )
+        elif self.__best_rrt.closest_to_taunt_distance_close and cat_interest < CatInterestEstimator.IS_SUPER_DUPER_UNINTERESTED_MAX:
+            target = "taunt distance close"
+            angle = get_angle_rrt(self.__best_rrt.closest_to_taunt_distance_close)
+            if angle is not None:
+                force = Point.from_angle(angle, self.__FORCE)
+                self.__body.apply_force_at_world_point(
+                    (force.x, force.y),
+                    self.__body.position
+                )
+        elif self.__best_rrt.closest_to_taunt_distance_medium and cat_interest < CatInterestEstimator.IS_SUPER_UNINTERESTED_MAX:
+            target = "taunt distance medium"
+            angle = get_angle_rrt(self.__best_rrt.closest_to_taunt_distance_medium)
+            if angle is not None:
+                force = Point.from_angle(angle, self.__FORCE)
+                self.__body.apply_force_at_world_point(
+                    (force.x, force.y),
+                    self.__body.position
+                )
+        elif self.__best_rrt.closest_to_taunt_distance_far and cat_interest < CatInterestEstimator.IS_UNINTERESTED_MIN:
+            target = "taunt distance far"
+            angle = get_angle_rrt(self.__best_rrt.closest_to_taunt_distance_far)
+            if angle is not None:
+                force = Point.from_angle(angle, self.__FORCE)
+                self.__body.apply_force_at_world_point(
+                    (force.x, force.y),
+                    self.__body.position
+                )
+        elif self.__best_rrt.out_of_sight_far and cat_interest >= CatInterestEstimator.IS_INTERESTED_MIN:
+            if(distance_to_cat < game.get_preferences().max_distance_from_cat):
+                target = "hiding"
+                angle = get_angle_rrt(self.__best_rrt.out_of_sight_far)
+                if angle is not None:
+                    force = Point.from_angle(angle, self.__FORCE)
+                    self.__body.apply_force_at_world_point(
+                        (force.x, force.y),
+                        self.__body.position
+                    )
+            else:
+                target = "towards"
+                angle = get_angle_rrt(self.__best_rrt.close)
+                if angle is not None:
+                    force = Point.from_angle(angle, self.__FORCE)
+                    self.__body.apply_force_at_world_point(
+                        (force.x, force.y),
+                        self.__body.position
+                    )
+        elif self.__best_rrt.scram and cat_interest >= CatInterestEstimator.IS_INTERESTED_MIN:
+            if(distance_to_cat < game.get_preferences().max_distance_from_cat):
+                target = "hiding"
+                angle = get_angle_rrt(self.__best_rrt.scram)
+                if angle is not None:
+                    force = Point.from_angle(angle, self.__FORCE)
+                    self.__body.apply_force_at_world_point(
+                        (force.x, force.y),
+                        self.__body.position
+                    )
+            else:
+                target = "towards"
+                angle = get_angle_rrt(self.__best_rrt.close)
+                if angle is not None:
+                    force = Point.from_angle(angle, self.__FORCE)
+                    self.__body.apply_force_at_world_point(
+                        (force.x, force.y),
+                        self.__body.position
+                    )
+        elif self.__best_rrt.close:
+            target = "towards"
+            angle = get_angle_rrt(self.__best_rrt.close)
             if angle is not None:
                 force = Point.from_angle(angle, self.__FORCE)
                 self.__body.apply_force_at_world_point(
@@ -1149,6 +1238,7 @@ class Mouse:
                 target_rot,
                 self.__MAX_ROT_DELTA
             )
+        tl_textbuffer.add(f"Mouse target: {target}")
 
 class Cat:
     CAT_WALKING = "walking"
@@ -1320,6 +1410,8 @@ class Preferences:
         self.taunt_distance_medium = 200
         self.taunt_distance_far = 300
         self.out_of_sight_distance_far = 300
+        self.scram_distance_always = 60
+        self.max_distance_from_cat = 400
         
 class Game:
     def __init__(self):
