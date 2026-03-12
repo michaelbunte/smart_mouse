@@ -286,19 +286,23 @@ class ObstacleContainer:
         rot = polygon.get_rotation()
         size = polygon.get_size()
 
-        verts = [
-            (p.x * size, p.y * size)
-            for p in polygon.get_points()
-        ]
+        cos_r = math.cos(rot)
+        sin_r = math.sin(rot)
 
-        body = pymunk.Body(body_type=pymunk.Body.STATIC)
-        body.position = (pos.x, pos.y)
-        body.angle = rot
+        verts = []
+        for p in polygon.get_points():
+            x = p.x * size
+            y = p.y * size
 
+            xr = x * cos_r - y * sin_r
+            yr = x * sin_r + y * cos_r
+
+            verts.append((xr + pos.x, yr + pos.y))
+
+        body = self.__space.static_body
         shape = pymunk.Poly(body, verts)
-        shape.sensor = True
 
-        self.__space.add(body, shape)
+        self.__space.add(shape)
         self.__shape_to_polygon[shape] = polygon
         self.__polygon_to_shape[polygon] = shape
 
@@ -369,7 +373,24 @@ class ObstacleContainer:
                 hit.point.y - start.y
             )
         }
-    
+
+def generate_line_from_point(point: Point, rot: float, obstacle_container, max_distance=2000):
+    start = point.copy()
+
+    direction = Point.from_angle(rot, max_distance)
+    far_point = start + direction
+
+    hit = obstacle_container.raycast_first(start, far_point)
+
+    if hit is None:
+        end = far_point
+        print("no hit")
+    else:
+        end = hit["point"]
+        print("hit")
+
+    return Line(start, end, color=(255, 255, 0), width=2)
+
 class Cat:
     def __init__(self, global_pos=Point(0, 0)):
         self.__head_rot = 0.0
@@ -380,13 +401,17 @@ class Cat:
         self.__MAX_HEAD_ROT_DELTA = 0.18
         self.__MAX_HEAD_OFFSET = 1.3
         self.__MAX_MOVE_SPEED = 4.0
+        self.__HEAD_OFFSET = 30
 
     def get_position(self):
         return self.__global_pos.copy()
+    
+    def __get_head_position(self):
+        return self.__global_pos + Point.from_angle(self.__body_rot, self.__HEAD_OFFSET)
 
     def draw(self, game):
         head = Polygon(
-            global_position=(self.__global_pos + Point.from_angle(self.__body_rot, 30)),
+            global_position=(self.__get_head_position()),
             rot=self.__head_rot,
             size=20,
             points=[
@@ -409,6 +434,14 @@ class Cat:
             ],
             color=(255, 146, 56)
         )
+
+        line = generate_line_from_point(
+            self.__get_head_position(),
+            self.__head_rot,
+            game.get_obstacle_container()
+        )
+
+        line.draw(game.get_screen(), game.get_camera_position())
 
         body.draw(game.get_screen(), game.get_camera_position())
         head.draw(game.get_screen(), game.get_camera_position())
@@ -498,6 +531,9 @@ class Game:
 
         self.__run_game()
     
+    def get_obstacle_container(self):
+        return self.__obstacle_container
+
     def get_screen(self):
         return self.__screen
 
