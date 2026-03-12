@@ -8,6 +8,82 @@ from queue import Queue
 UPDATE_MS = 10
 CAMERA_SPEED = 5
 
+class TextBuffer:
+    LEFT = "left"
+    CENTER = "center"
+    RIGHT = "right"
+
+    TOP = "top"
+    MIDDLE = "middle"
+    BOTTOM = "bottom"
+
+    def __init__(
+        self,
+        font_size=16,
+        font_name=None,
+        color=(255, 255, 255),
+        line_spacing=2,
+        justify_x=LEFT,
+        justify_y=TOP
+    ):
+        self.__font = pygame.font.SysFont(font_name, font_size)
+        self.__color = color
+        self.__line_spacing = line_spacing
+        self.__justify_x = justify_x
+        self.__justify_y = justify_y
+        self.__lines = []
+
+    def clear(self):
+        self.__lines.clear()
+
+    def add(self, text):
+        self.__lines.append(str(text))
+
+    def set_lines(self, lines):
+        self.__lines = [str(l) for l in lines]
+
+    def draw(self, surface, x, y):
+        if not self.__lines:
+            return
+
+        rendered = []
+        max_width = 0
+        total_height = 0
+
+        for line in self.__lines:
+            surf = self.__font.render(line, True, self.__color)
+            rendered.append(surf)
+
+            w, h = surf.get_size()
+            max_width = max(max_width, w)
+            total_height += h + self.__line_spacing
+
+        total_height -= self.__line_spacing
+
+        # vertical justification
+        if self.__justify_y == self.TOP:
+            start_y = y
+        elif self.__justify_y == self.MIDDLE:
+            start_y = y - total_height / 2
+        else:
+            start_y = y - total_height
+
+        current_y = start_y
+
+        for surf in rendered:
+            w, h = surf.get_size()
+
+            # horizontal justification
+            if self.__justify_x == self.LEFT:
+                draw_x = x
+            elif self.__justify_x == self.CENTER:
+                draw_x = x - w / 2
+            else:
+                draw_x = x - w
+
+            surface.blit(surf, (draw_x, current_y))
+            current_y += h + self.__line_spacing
+
 class Point:
     def __init__(self, x: float, y: float):
         self.x = x
@@ -1083,6 +1159,22 @@ class Cat:
 
         body.draw(game.get_screen(), game.get_camera_position())
         head.draw(game.get_screen(), game.get_camera_position())
+        
+        textbuffer = game.get_bl_textbuffer()
+        textbuffer.clear()
+        textbuffer.add("hi there")
+        textbuffer.add("hi there")
+        textbuffer.add("hi there")
+        textbuffer.add("hi there")
+        textbuffer.add("hi there")
+        textbuffer.add("hi there")
+        textbuffer.add("hi there")
+        textbuffer.add("hi there")
+        textbuffer.add("hi there")
+        textbuffer.add("hi there")
+        textbuffer.add("hi there")
+        textbuffer.add("hi there")
+
 
     def __wrap_angle(self, angle):
         while angle > math.pi:
@@ -1165,6 +1257,8 @@ class Game:
         self.__preferences = Preferences()
         
         pygame.init()
+        self.__bl_textbuffer = TextBuffer(23, justify_y=TextBuffer.BOTTOM)
+
         self.__current_screen_size = Point(1000, 800)
         self.__screen = pygame.display.set_mode((
             int(self.__current_screen_size.x),
@@ -1181,6 +1275,9 @@ class Game:
 
         self.__run_game()
     
+    def get_bl_textbuffer(self):
+        return self.__bl_textbuffer
+
     def get_cat(self):
         return self.__cat
     
@@ -1213,6 +1310,7 @@ class Game:
             self.__obstacle_container.draw_obstacles(self)
             self.__cat.draw(self)
             self.__mouse.draw(self)
+            self.__bl_textbuffer.draw(self.__screen, 10, self.__current_screen_size.y - 10 )
             pygame.display.flip()
             self.__clock.tick(120)
 
