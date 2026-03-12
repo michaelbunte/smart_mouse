@@ -792,6 +792,7 @@ def draw_rrt(nodes: [RRTNode], game):
     for node in nodes:
         node.draw(game)
 
+
 class BestRRT:
     def __init__(self, nodes: [RRTNode], game):
         self.scram = None
@@ -824,8 +825,7 @@ class BestRRT:
         self.close = self.__pick_closest(nodes)
 
         self.out_of_sight = self.__pick_closest(self.__hidden_nodes)
-        self.out_of_sight_far = self.__pick_distance_match(
-            self.__hidden_nodes,
+        self.out_of_sight_far = self.__pick_hidden_line_distance_match(
             self.__prefs.out_of_sight_distance_far
         )
 
@@ -874,6 +874,36 @@ class BestRRT:
 
             draw_node(self.strafe_clockwise, (0, 255, 0))
             draw_node(self.strafe_counterclockwise, (0, 180, 0))
+
+    def __pick_hidden_line_distance_match(self, target_distance):
+        if not self.__hidden_nodes:
+            return None
+
+        candidates = []
+
+        for node in self.__hidden_nodes:
+            proj, perp_dist = self.__point_line_metrics(
+                self.__cat_pos,
+                self.__mouse_pos,
+                node.position
+            )
+
+            dist = self.__distance_to_cat(node)
+            candidates.append((node, proj, perp_dist, dist))
+
+        def score(item):
+            node, proj, perp_dist, dist = item
+
+            on_segment_penalty = 0 if 0.0 <= proj <= 1.0 else 1
+
+            return (
+                on_segment_penalty,
+                perp_dist,
+                abs(dist - target_distance),
+                dist
+            )
+
+        return min(candidates, key=score)[0]
 
     def __wrap_angle(self, angle):
         while angle > math.pi:
