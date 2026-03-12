@@ -907,6 +907,7 @@ class Mouse:
         self.__rot = 0.0
         self.__rrt = []
         self.__FORCE = 4000
+        self.__MAX_ROT_DELTA = 0.12
 
         self.__body, self.__shape = game.get_obstacle_container().add_ball(
             position=global_pos,
@@ -917,6 +918,23 @@ class Mouse:
         )
 
         self.__body.damping = 0.2
+
+    def __wrap_angle(self, angle):
+        while angle > math.pi:
+            angle -= 2.0 * math.pi
+        while angle < -math.pi:
+            angle += 2.0 * math.pi
+        return angle
+
+    def __rotate_towards(self, current, target, max_delta):
+        diff = self.__wrap_angle(target - current)
+
+        if diff > max_delta:
+            diff = max_delta
+        elif diff < -max_delta:
+            diff = -max_delta
+
+        return self.__wrap_angle(current + diff)
 
     def get_position(self):
         pos = self.__body.position
@@ -929,7 +947,7 @@ class Mouse:
         body = Polygon(
             global_position=self.get_position(),
             rot=self.__rot,
-            size=5,
+            size=6.5,
             points=[
                 Point(0, -1),
                 Point(0, 1),
@@ -950,13 +968,23 @@ class Mouse:
         if best_rrt.out_of_sight_far is not None:
             angle = get_angle_rrt(best_rrt.out_of_sight_far)
             if angle is not None:
-                self.__rot = angle
-
                 force = Point.from_angle(angle, self.__FORCE)
                 self.__body.apply_force_at_world_point(
                     (force.x, force.y),
                     self.__body.position
                 )
+
+        vx = self.__body.velocity.x
+        vy = self.__body.velocity.y
+        speed = math.hypot(vx, vy)
+
+        if speed > 1e-3:
+            target_rot = math.atan2(vy, vx)
+            self.__rot = self.__rotate_towards(
+                self.__rot,
+                target_rot,
+                self.__MAX_ROT_DELTA
+            )
 
 
 class Cat:
