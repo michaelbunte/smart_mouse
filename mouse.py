@@ -1416,11 +1416,13 @@ class Preferences:
         
 class Game:
     def __init__(self):
+        print("=========================================")
         print("q - pounce")
         print("w - walk normally")
         print("e - stalk")
         print("r - crouch")
         print("mouse - steering (like slither.io)")
+        print("=========================================")
 
         self.__obstacle_container = ObstacleContainer()
         self.__clock = pygame.time.Clock()
