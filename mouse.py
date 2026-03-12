@@ -1041,6 +1041,21 @@ def get_angle_rrt(node: RRTNode):
 
     return get_direction(root.position, first_generation.position)
 
+class CatInterestEstimator:
+    HIGH_INTEREST = 10.0
+    def __init__(self):
+        self.__interest = 0
+    
+    def tick(self, cat):
+        if cat.get_state() == Cat.CAT_CROUCHING or cat.get_state() == Cat.CAT_STALKING or cat.get_state() == Cat.CAT_POUNCING:
+            self.__interest = CatInterestEstimator.HIGH_INTEREST
+        else:
+            self.__interest -= 0.02
+
+    def get_interest(self):
+        return self.__interest
+
+
 class Mouse:
     def __init__(self, game, global_pos=Point(50, 0)):
         self.__rot = 0.0
@@ -1048,6 +1063,7 @@ class Mouse:
         self.__best_rrt = BestRRT([], game)
         self.__FORCE = 4000
         self.__MAX_ROT_DELTA = 0.12
+        self.__cat_interest_estimator = CatInterestEstimator()
 
         self.__body, self.__shape = game.get_obstacle_container().add_ball(
             position=global_pos,
@@ -1097,11 +1113,18 @@ class Mouse:
         )
 
         draw_rrt(self.__rrt, game)
-        body.draw(game.get_screen(), game.get_camera_position())
         self.__best_rrt.draw(game)
+        body.draw(game.get_screen(), game.get_camera_position())
 
     def tick(self, game):
         current_pos = self.get_position()
+
+        self.__cat_interest_estimator.tick(cat=game.get_cat())
+
+        tl_textbuffer = game.get_tl_textbuffer()
+        tl_textbuffer.clear()
+        tl_textbuffer.add(f"Estimated cat interest: {self.__cat_interest_estimator.get_interest():.2f}")
+        
 
         self.__rrt = create_rrt(game, current_pos)
         self.__best_rrt = BestRRT(self.__rrt, game)
@@ -1147,6 +1170,9 @@ class Cat:
         self.__WALK_MOVE_SPEED = 4.0
         self.__POUNCE_MOVE_SPEED = 10.0
         self.__HEAD_OFFSET = 30
+
+    def get_state(self):
+        return self.__state
 
     def get_position(self):
         return self.__global_pos.copy()
@@ -1305,7 +1331,8 @@ class Game:
         self.__preferences = Preferences()
         
         pygame.init()
-        self.__bl_textbuffer = TextBuffer(23, justify_y=TextBuffer.BOTTOM)
+        self.__bl_textbuffer = TextBuffer(30, justify_y=TextBuffer.BOTTOM)
+        self.__tl_textbuffer = TextBuffer(30)
 
         self.__current_screen_size = Point(1000, 800)
         self.__screen = pygame.display.set_mode((
@@ -1325,6 +1352,9 @@ class Game:
     
     def get_bl_textbuffer(self):
         return self.__bl_textbuffer
+    
+    def get_tl_textbuffer(self):
+        return self.__tl_textbuffer
 
     def get_cat(self):
         return self.__cat
@@ -1359,6 +1389,7 @@ class Game:
             self.__cat.draw(self)
             self.__mouse.draw(self)
             self.__bl_textbuffer.draw(self.__screen, 10, self.__current_screen_size.y - 10 )
+            self.__tl_textbuffer.draw(self.__screen, 10, 10)
             pygame.display.flip()
             self.__clock.tick(120)
 
