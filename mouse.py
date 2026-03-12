@@ -1,6 +1,7 @@
 import math
 import pygame
 import sys
+import random
 from rtree import index
 
 UPDATE_MS = 10
@@ -19,7 +20,6 @@ def get_direction(p1: Point, p2: Point):
     dx = p2.x - p1.x
     dy = p2.y - p1.y
     return math.atan2(dy, dx)
-
 
 class Polygon:
     def __init__(self, global_position, rot: float, size: float, points, color):
@@ -140,6 +140,54 @@ class Polygon:
 
         return (min_x, min_y, max_x, max_y)
 
+def generate_random_map(width, height, object_count, obstacle_container, seed):
+    rng = random.Random(seed)
+
+    half_w = width * 0.5
+    half_h = height * 0.5
+
+    for _ in range(object_count):
+        shape_type = rng.choice(["square", "triangle"])
+
+        x = rng.uniform(-half_w, half_w)
+        y = rng.uniform(-half_h, half_h)
+
+        rot = rng.uniform(0.0, 2.0 * math.pi)
+        size = rng.uniform(10.0, 50.0)
+
+        color = (
+            rng.randint(80, 255),
+            rng.randint(80, 255),
+            rng.randint(80, 255)
+        )
+
+        if shape_type == "square":
+            poly = Polygon(
+                global_position=Point(x, y),
+                rot=rot,
+                size=size,
+                points=[
+                    Point(-2, -1),
+                    Point(2, -1),
+                    Point(2, 1),
+                    Point(-2, 1)
+                ],
+                color=color
+            )
+        else:
+            poly = Polygon(
+                global_position=Point(x, y),
+                rot=rot,
+                size=size,
+                points=[
+                    Point(-1, -1),
+                    Point(-1, 1),
+                    Point(2, 0)
+                ],
+                color=color
+            )
+
+        poly.add_to_obstacle_container(obstacle_container)
 
 class ObstacleContainer:
     def __init__(self):
@@ -209,33 +257,13 @@ class Game:
         pygame.init()
         self.__screen = pygame.display.set_mode((self.__current_screen_size.y, self.__current_screen_size.x))
 
-        square = Polygon(
-            global_position=Point(100, 200),
-            rot=0.0,
-            size=20,
-            points=[
-                Point(-2, -1),
-                Point(2, -1),
-                Point(2, 1),
-                Point(-2, 1)
-            ],
-            color=(200, 100, 100)
+        generate_random_map(
+            seed=12345,
+            width=10000,
+            height=10000,
+            object_count=4000,
+            obstacle_container=self.__obstacle_container
         )
-
-        triangle = Polygon(
-            global_position=Point(200, 100),
-            rot=0.0,
-            size=20,
-            points=[
-                Point(-1, -1),
-                Point(-1, 1),
-                Point(2, 0)
-            ],
-            color=(200, 200, 100)
-        )
-
-        square.add_to_obstacle_container(self.__obstacle_container)
-        triangle.add_to_obstacle_container(self.__obstacle_container)
         self.__run_game()
     
     def get_screen(self):
