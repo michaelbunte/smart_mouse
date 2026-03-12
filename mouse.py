@@ -410,9 +410,36 @@ def generate_line_from_point(point: Point, rot: float, obstacle_container, max_d
 
     return Line(start, end, color=(255, 255, 0), width=2)
 
-def draw_ray_fan(screen, camera_position, obstacle_container, origin: Point, center_rot: float,
-                 fov_radians: float, ray_count: int, max_distance=1000,
-                 color=(255, 255, 0), width=2):
+def generate_line_from_point(point: Point, rot: float, obstacle_container, max_distance=1000):
+    start = point.copy()
+
+    direction = Point.from_angle(rot, max_distance)
+    far_point = start + direction
+
+    hit = obstacle_container.raycast_first(start, far_point)
+
+    if hit is None:
+        end = far_point
+    else:
+        end = hit["point"]
+
+    return start, end
+
+
+def draw_ray_fan(
+    screen,
+    camera_position,
+    obstacle_container,
+    origin: Point,
+    center_rot: float,
+    fov_radians: float,
+    ray_count: int,
+    max_distance=1000,
+    color_a=(255, 255, 0),
+    color_b=(255, 0, 0),
+    switch_distance=200,
+    width=2
+):
     if ray_count <= 0:
         return
 
@@ -424,15 +451,33 @@ def draw_ray_fan(screen, camera_position, obstacle_container, origin: Point, cen
         angles = [start_rot + i * step for i in range(ray_count)]
 
     for rot in angles:
-        line = generate_line_from_point(
+        start, end = generate_line_from_point(
             origin,
             rot,
             obstacle_container,
             max_distance=max_distance
         )
-        line.set_color(color)
-        line.set_width(width)
-        line.draw(screen, camera_position)
+
+        dx = end.x - start.x
+        dy = end.y - start.y
+        dist = math.hypot(dx, dy)
+
+        if dist <= switch_distance:
+            Line(start, end, color=color_a, width=width).draw(screen, camera_position)
+            continue
+
+        # split point
+        t = switch_distance / dist
+        mid = Point(
+            start.x + dx * t,
+            start.y + dy * t
+        )
+
+        # first segment
+        Line(start, mid, color=color_a, width=width).draw(screen, camera_position)
+
+        # second segment
+        Line(mid, end, color=color_b, width=width).draw(screen, camera_position)
 
 class Mouse:
     def __init__(self, global_pos=Point(50, 0)):
@@ -508,7 +553,9 @@ class Cat:
             fov_radians=2.5,
             ray_count=100,
             max_distance=1000,
-            color=(70, 70, 70),
+            color_a=(70, 70, 70),
+            color_b=(50, 50, 50),
+            switch_distance=200,
             width=2
         )
 
