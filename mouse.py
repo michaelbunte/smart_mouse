@@ -1073,6 +1073,11 @@ class Mouse:
         self.__MAX_ROT_DELTA = 0.12
         self.__cat_interest_estimator = CatInterestEstimator()
 
+        self.__time_spent_interested = 0
+        self.__time_spent_uninterested = 0
+        self.__time_spent_hidden_while_interested = 0
+        self.__time_spent_visible_while_uninterested = 0
+
         self.__body, self.__shape = game.get_obstacle_container().add_ball(
             position=global_pos,
             radius=0.0001,
@@ -1134,13 +1139,45 @@ class Mouse:
         tl_textbuffer = game.get_tl_textbuffer()
         tl_textbuffer.clear()
         tl_textbuffer.add(f"Estimated cat interest: {self.__cat_interest_estimator.get_interest():.2f}")
-        
 
         distance_to_cat = get_distance(game.get_cat().get_head_position(), self.get_position())
 
         self.__rrt = create_rrt(game, current_pos)
         self.__best_rrt = BestRRT(self.__rrt, game)
 
+        mouse_hit = game.get_obstacle_container().raycast_first(
+            game.get_cat().get_head_position(),
+            self.get_position()
+        )
+        mouse_visible_to_cat = (mouse_hit is None)
+        mouse_hidden_from_cat = not mouse_visible_to_cat
+
+        is_interested = cat_interest >= CatInterestEstimator.IS_INTERESTED_MIN
+        is_uninterested = cat_interest < CatInterestEstimator.IS_INTERESTED_MIN
+
+        if is_interested:
+            self.__time_spent_interested += 1
+            if mouse_hidden_from_cat:
+                self.__time_spent_hidden_while_interested += 1
+
+        if is_uninterested:
+            self.__time_spent_uninterested += 1
+            if mouse_visible_to_cat:
+                self.__time_spent_visible_while_uninterested += 1
+
+        hidden_while_interested_pct = (
+            100.0 * self.__time_spent_hidden_while_interested / self.__time_spent_interested
+            if self.__time_spent_interested > 0 else 0.0
+        )
+
+        visible_while_uninterested_pct = (
+            100.0 * self.__time_spent_visible_while_uninterested / self.__time_spent_uninterested
+            if self.__time_spent_uninterested > 0 else 0.0
+        )
+
+        tl_textbuffer.add(f"% hidden while interested: {hidden_while_interested_pct:.2f}")
+        tl_textbuffer.add(f"% visible while uninterested: {visible_while_uninterested_pct:.2f}")
+        
         force = Point(0, 0)
         target = "none selected"
 
@@ -1500,7 +1537,6 @@ class Game:
 
         self.__obstacle_container.step(UPDATE_MS / 1000.0)
 
-
     def get_camera_position(self):
         return self.__cat.get_position() - (self.__current_screen_size / 2)
     
@@ -1509,7 +1545,6 @@ class Game:
 
 def main():
     Game()
-
 
 if __name__ == "__main__":
     main()
