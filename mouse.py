@@ -1120,8 +1120,9 @@ class Mouse:
             color=(255, 255, 255)
         )
 
-        draw_rrt(self.__rrt, game)
-        self.__best_rrt.draw(game)
+        if game.get_preferences().draw_rrt:
+            draw_rrt(self.__rrt, game)
+            self.__best_rrt.draw(game)
         body.draw(game.get_screen(), game.get_camera_position())
 
     def tick(self, game):
@@ -1304,20 +1305,20 @@ class Cat:
             color=(255, 146, 56)
         )
 
-        draw_ray_fan(
-            screen=game.get_screen(),
-            camera_position=game.get_camera_position(),
-            obstacle_container=game.get_obstacle_container(),
-            origin=self.get_head_position(),
-            center_rot=self.__head_rot,
-            fov_radians=2.5,
-            ray_count=100,
-            max_distance=1000,
-            color_a=(70, 70, 70),
-            color_b=(50, 50, 50),
-            switch_distance=200,
-            width=2
-        )
+        # draw_ray_fan(
+        #     screen=game.get_screen(),
+        #     camera_position=game.get_camera_position(),
+        #     obstacle_container=game.get_obstacle_container(),
+        #     origin=self.get_head_position(),
+        #     center_rot=self.__head_rot,
+        #     fov_radians=2.5,
+        #     ray_count=100,
+        #     max_distance=1000,
+        #     color_a=(70, 70, 70),
+        #     color_b=(50, 50, 50),
+        #     switch_distance=200,
+        #     width=2
+        # )
 
         body.draw(game.get_screen(), game.get_camera_position())
         head.draw(game.get_screen(), game.get_camera_position())
@@ -1365,7 +1366,7 @@ class Cat:
 
         to_cursor = cursor_pos - screen_center
 
-        self.__state = Cat.CAT_WALKING
+        self.__state = Cat.CAT_STANDING
 
         if not (to_cursor.x == 0 and to_cursor.y == 0):
             target_rot = math.atan2(to_cursor.y, to_cursor.x)
@@ -1405,14 +1406,14 @@ class Cat:
 
 class Preferences:
     def __init__(self):
-        self.stationary_range = 200
-        self.motion_viewable_range = 600
+        self.motion_viewable_range = 600 # only used for visualization
         self.taunt_distance_close = 100
         self.taunt_distance_medium = 200
         self.taunt_distance_far = 250
         self.out_of_sight_distance_far = 400
         self.scram_distance_always = 60
         self.max_distance_from_cat = 400
+        self.draw_rrt = True
         
 class Game:
     def __init__(self):
@@ -1445,7 +1446,7 @@ class Game:
             seed=0,
             width=10000,
             height=10000,
-            object_count=4000,
+            object_count=4500,
             obstacle_container=self.__obstacle_container
         )
 
@@ -1473,7 +1474,6 @@ class Game:
         return self.__screen
 
     def __run_game(self):
-        create_rrt(self)
         while True:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
